@@ -3,47 +3,102 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - env_analysis_project</title>
-    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <title>@ViewData["Title"] - Environment Analysis</title>
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
+
+    
+    <!-- Chart.js + Luxon adapter -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/env_analysis_project.styles.css" asp-append-version="true" />
 </head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
-            <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">env_analysis_project</a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-                        </li>
-                    </ul>
-                </div>
+
+<body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
+
+    <header class="bg-white shadow-sm">
+        <nav class="max-w-7xl mx-auto flex items-center p-4">
+
+            <!-- Logo / Title -->
+            <a class="text-md font-bold text-blue-800" asp-area="" asp-controller="Home" asp-action="Index">
+                ENVIRONMENT ANALYSIS
+            </a>
+
+            <!-- Menu giữa -->
+            <ul class="flex space-x-8 text-sm font-medium text-gray-700 ml-12 cursor-pointer">
+                <li>
+                    <a class="hover:text-black transition">
+                        Dashboard
+                    </a>
+                </li>
+                <li>
+                    <a class="hover:text-black transition">
+                        Data Center
+                    </a>
+                </li>
+                <li>
+                    <a class="hover:text-black transition">
+                        Alerts & Forecasts
+                    </a>
+                </li>
+
+                <li>
+                    <a class="hover:text-black transition">
+                        Account Management
+                    </a>
+                </li>
+
+                @* <li>
+                    <a class="hover:text-blue-600 transition" asp-area="" asp-controller="Home" asp-action="Index">
+                        Home
+                    </a>
+                </li> *@
+            
+            </ul>
+
+            <!-- Icon user bên phải -->
+            <div class="text-gray-500 cursor-pointer ml-auto text-xs">
+                <i class="bi bi-person-circle text-xl hover:black"></i>
             </div>
+
         </nav>
     </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            @RenderBody()
-        </main>
-    </div>
 
-    <footer class="border-top footer text-muted">
-        <div class="container">
-            &copy; 2025 - env_analysis_project - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+    <main role="main" class="flex-grow container mx-auto py-4 max-w-7xl">
+        @RenderBody()
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 text-gray-700 py-6">
+        <div class="container mx-auto flex flex-col md:flex-row items-center justify-between px-4 space-y-3 md:space-y-0">
+
+            <!-- Bản quyền -->
+            <div class="text-sm text-center md:text-left">
+                &copy; 2025 <span class="font-semibold text-gray-900">Environment Analysis</span>. All rights reserved.
+            </div>
+
+            <!-- Liên kết mạng xã hội -->
+            <div class="flex space-x-5 text-xl">
+                <a href="https://www.facebook.com/nguyen.khanh.201930" target="_blank"
+                   class="hover:text-blue-600 transition-colors duration-200">
+                    <i class="bi bi-facebook"></i>
+                </a>
+                <a href="https://github.com/KhanhNguyenVimaru/env-analysis" target="_blank"
+                   class="hover:text-gray-800 transition-colors duration-200">
+                    <i class="bi bi-github"></i>
+                </a>
+            </div>
+
         </div>
     </footer>
-    <script src="~/lib/jquery/dist/jquery.min.js"></script>
-    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
+
+
+
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
