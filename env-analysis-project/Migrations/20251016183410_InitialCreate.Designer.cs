@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using env_analysis_project.Data;
 
@@ -11,9 +12,11 @@ using env_analysis_project.Data;
 namespace env_analysis_project.Migrations
 {
     [DbContext(typeof(env_analysis_projectContext))]
-    partial class env_analysis_projectContextModelSnapshot : ModelSnapshot
+    [Migration("20251016183410_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
