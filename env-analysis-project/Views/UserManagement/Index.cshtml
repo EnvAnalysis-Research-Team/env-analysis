@@ -1,0 +1,88 @@
+﻿@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Account Management";
+}
+
+@model IEnumerable<env_analysis_project.Models.ApplicationUser>
+
+<div class="max-w-7xl mx-auto bg-white shadow-md rounded-md py-4 px-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row justify-between md:items-center gap-3 mb-6">
+        <div class="flex item-center gap-2">
+            <h2 class="text-base font-semibold text-gray-700">
+                Account Management
+            </h2>
+        </div>
+        
+
+        <!-- Action bar -->
+        <div class="flex items-center gap-2">
+            <!-- Search box -->
+            <form asp-action="Index" method="get" class="flex items-center border border-gray-300 rounded-md overflow-hidden">
+                <input type="text" name="searchString"
+                       placeholder="Search by email or name..."
+                       value="@Context.Request.Query["searchString"]"
+                       class="px-3 py-1.5 text-xs w-48 md:w-60 focus:outline-none" />
+            </form>
+            <!-- Reset button -->
+
+            <a asp-action="Index"
+               class="bg-gray-200 hover:bg-gray-300 text-gray-700 border border-gray-800 text-xs font-medium px-3 py-1.5 rounded-md transition flex items-center justify-center">
+                <i class="bi bi-arrow-clockwise text-sm mr-1"></i> Reset
+            </a>
+
+
+            <!-- Add user -->
+            <a asp-action="Create"
+               class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-md transition flex items-center justify-center">
+                <i class="bi bi-person-plus text-sm mr-1"></i> Add User
+            </a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-xs text-left text-gray-700 border border-gray-200 rounded-lg">
+            <thead class="bg-gray-100 text-gray-600 uppercase">
+                <tr>
+                    <th class="px-4 py-3 font-semibold">Email</th>
+                    <th class="px-4 py-3 font-semibold">Full Name</th>
+                    <th class="px-4 py-3 font-semibold">Role</th>
+                    <th class="px-4 py-3 font-semibold">Created At</th>
+                    <th class="px-4 py-3 font-semibold text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                @if (Model != null && Model.Any())
+                {
+                    foreach (var user in Model)
+                    {
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-4 py-3">@user.Email</td>
+                            <td class="px-4 py-3">@user.FullName</td>
+                            <td class="px-4 py-3">@user.Role</td>
+                            <td class="px-4 py-3">@user.CreatedAt?.ToString("yyyy-MM-dd")</td>
+                            <td class="px-4 py-3 text-center">
+                                <form asp-action="Delete" method="post" class="inline">
+                                    <input type="hidden" name="id" value="@user.Id" />
+                                    <button type="submit"
+                                            class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-md transition flex items-center justify-center">
+                                        <i class="bi bi-trash text-sm mr-1"></i> Delete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="5" class="px-4 py-4 text-center text-gray-400">
+                            No users found.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

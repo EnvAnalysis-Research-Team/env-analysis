@@ -33,7 +33,7 @@
             <!-- Menu giữa -->
             <ul class="flex space-x-8 text-sm font-medium text-gray-700 ml-12 cursor-pointer">
                 <li>
-                    <a class="hover:text-black transition">
+                    <a class="hover:text-black transition" asp-controller="Home" asp-action="Index">
                         Dashboard
                     </a>
                 </li>
@@ -48,11 +48,10 @@
                     </a>
                 </li>
 
-                <li>
-                    <a class="hover:text-black transition">
-                        Account Management
-                    </a>
-                </li>
+                <a class="hover:text-black transition" asp-controller="UserManagement" asp-action="Index">
+                    Account Management
+                </a>
+
 
                 @* <li>
                     <a class="hover:text-blue-600 transition" asp-area="" asp-controller="Home" asp-action="Index">
@@ -74,7 +73,7 @@
         @RenderBody()
     </main>
 
-    <footer class="bg-white border-t border-gray-200 text-gray-700 py-6">
+    <footer class="bg-white border-t border-gray-200 text-gray-700 py-6 mt-24">
         <div class="container max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between px-4 space-y-3 md:space-y-0">
 
             <!-- Bản quyền -->
