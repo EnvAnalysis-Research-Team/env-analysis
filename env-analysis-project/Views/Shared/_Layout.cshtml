@@ -48,11 +48,27 @@
                         Dashboard
                     </a>
                 </li>
-                <li>
-                    <a class="hover:text-black transition">
-                        Data Center
-                    </a>
+                <li x-data="{ open: false }" class="relative">
+                    <button @@click="open = !open"
+                            @@click.away="open = false"
+                            class="hover:text-black transition flex items-center space-x-1">
+                        <span>Data Center</span>
+                        <i class="bi bi-caret-down-fill text-[10px] mt-[2px]"></i>
+                    </button>
+
+                    <!-- Dropdown menu -->
+                    <div x-show="open" x-transition class="absolute left-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-50">
+                        <a asp-controller="SourceManagement" asp-action="Manage"
+                           class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-black">
+                            Source Management
+                        </a>
+                        <a asp-controller="MeasurementResult" asp-action="Index"
+                           class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-black">
+                            Measurement Results
+                        </a>
+                    </div>
                 </li>
+
                 <li>
                     <a class="hover:text-black transition">
                         Alerts & Forecasts
@@ -62,14 +78,6 @@
                 <a class="hover:text-black transition" asp-controller="UserManagement" asp-action="Index">
                     Account Management
                 </a>
-
-
-                @* <li>
-                    <a class="hover:text-blue-600 transition" asp-area="" asp-controller="Home" asp-action="Index">
-                        Home
-                    </a>
-                </li> *@
-            
             </ul>
 
             <!-- Icon user bên phải -->
