@@ -179,7 +179,7 @@
         </table>
     </div>
 
-    <!-- MODAL: Add Source Type (now vanilla JS controlled, like others) -->
+    <!-- MODAL: Add Source Type -->
     <div id="addTypeModal" style="display: none; margin-top: 0 !important;"
          class="fixed inset-0 bg-black bg-opacity-40 flex pt-16 justify-center z-50">
         <div class="bg-white rounded-md shadow-lg w-full max-w-xl p-5 space-y-4 h-fit">
@@ -204,8 +204,9 @@
                               class="w-full border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none"></textarea>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <input type="checkbox" name="IsActive" id="IsActive"
+                    <input type="checkbox" name="IsActive" id="IsActive" value="true"
                            class="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
+
                     <label for="IsActive" class="text-gray-700">Active</label>
                 </div>
                 <div class="flex justify-end space-x-2 pt-2">
@@ -249,7 +250,7 @@
                               class="w-full border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none"></textarea>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <input type="checkbox" name="IsActive" id="edit_IsActive"
+                    <input type="checkbox" name="IsActive" id="edit_IsActive" value="true"
                            class="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
                     <label for="edit_IsActive" class="text-gray-700">Active</label>
                 </div>
@@ -583,7 +584,6 @@
 
                 const tokenInput = editForm.querySelector('input[name="__RequestVerificationToken"]');
                 const fd = new FormData(editForm);
-                if (tokenInput) fd.append('__RequestVerificationToken', tokenInput.value);
                 fd.append('UpdatedAt', new Date().toISOString());
 
                 try {

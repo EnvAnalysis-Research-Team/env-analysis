@@ -142,53 +142,53 @@ namespace env_analysis_project.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        // POST: SourceTypes/Edit/5
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("SourceTypeID,SourceTypeName,Description,IsActive,CreatedAt,UpdatedAt")] SourceType sourceType)
+        public async Task<IActionResult> Edit(int id, [Bind("SourceTypeID,SourceTypeName,Description,IsActive,CreatedAt,UpdatedAt")] SourceType model)
         {
-            if (id != sourceType.SourceTypeID) return NotFound();
+            // Kiểm tra ID hợp lệ
+            if (id != model.SourceTypeID)
+                return Json(new { success = false, message = "Invalid ID." });
 
+            // Kiểm tra model hợp lệ
             if (!ModelState.IsValid)
             {
-                if (IsAjaxRequest())
-                {
-                    var errors = ModelState.Values
-                        .SelectMany(v => v.Errors)
-                        .Select(e => e.ErrorMessage)
-                        .ToArray();
-                    return Json(new { success = false, errors });
-                }
-
-                return View(sourceType);
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToArray();
+                return Json(new { success = false, errors });
             }
+
+            // Tìm bản ghi hiện có
+            var existing = await _context.SourceType.FindAsync(id);
+            if (existing == null)
+                return Json(new { success = false, message = "Source type not found." });
 
             try
             {
-                // Ensure entity exists before updating
-                var existing = await _context.SourceType.FindAsync(id);
-                if (existing == null) return NotFound();
+                // Cập nhật các thuộc tính
+                existing.SourceTypeName = model.SourceTypeName?.Trim();
+                existing.Description = model.Description?.Trim();
+                existing.IsActive = model.IsActive;
+                existing.UpdatedAt = DateTime.Now; // luôn cập nhật tại server
 
-                existing.SourceTypeName = sourceType.SourceTypeName;
-                existing.Description = sourceType.Description;
-                existing.IsActive = sourceType.IsActive;
-                existing.UpdatedAt = sourceType.UpdatedAt == default ? DateTime.Now : sourceType.UpdatedAt;
-
+                // Lưu thay đổi
                 _context.Update(existing);
                 await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!SourceTypeExists(sourceType.SourceTypeID)) return NotFound();
-                else throw;
-            }
 
-            if (IsAjaxRequest())
-            {
-                return Json(new { success = true, id = sourceType.SourceTypeID, name = sourceType.SourceTypeName });
+                return Json(new
+                {
+                    success = true,
+                    id = existing.SourceTypeID,
+                    name = existing.SourceTypeName
+                });
             }
-
-            return RedirectToAction(nameof(Index));
+            catch (Exception ex)
+            {
+                // Log nếu cần, trả về lỗi JSON gọn gàng
+                return Json(new { success = false, message = "Error updating source type: " + ex.Message });
+            }
         }
 
         // GET: SourceTypes/Delete/5
