@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using env_analysis_project.Data;
 using env_analysis_project.Models;
@@ -20,23 +15,25 @@ namespace env_analysis_project.Controllers
         }
 
         // =============================
-        // LIST VIEW
+        //  LIST VIEW
         // =============================
         public async Task<IActionResult> Index()
         {
-            var emissionSources = _context.EmissionSource
+            // Lấy danh sách nguồn phát thải và loại nguồn
+            var emissionSources = await _context.EmissionSource
                 .Include(e => e.SourceType)
-                .OrderBy(e => e.SourceName);
+                .OrderBy(e => e.SourceName)
+                .ToListAsync();
 
             ViewBag.SourceTypes = await _context.SourceType
                 .OrderBy(t => t.SourceTypeName)
                 .ToListAsync();
 
-            return View(await emissionSources.ToListAsync());
+            return View(emissionSources);
         }
 
         // =============================
-        // GET DETAIL (AJAX)
+        //  DETAIL (AJAX)
         // =============================
         [HttpGet]
         public async Task<IActionResult> Detail(int id)
@@ -48,7 +45,6 @@ namespace env_analysis_project.Controllers
             if (source == null)
                 return NotFound();
 
-            // Dựng DTO trả về cho JS
             var result = new
             {
                 source.EmissionSourceID,
@@ -68,34 +64,36 @@ namespace env_analysis_project.Controllers
             return Json(result);
         }
 
-
         // =============================
-        // CREATE (FORM)
+        //  CREATE (FORM)
         // =============================
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("SourceCode,SourceName,SourceTypeID,Location,Latitude,Longitude,Description,IsActive")] EmissionSource emissionSource)
+        public async Task<IActionResult> Create([FromForm] EmissionSource model)
         {
             if (!ModelState.IsValid)
-                return BadRequest(new { error = "Invalid data" });
+                return BadRequest(ModelState);
 
-            emissionSource.CreatedAt = DateTime.Now;
-            emissionSource.UpdatedAt = DateTime.Now;
+            model.CreatedAt = DateTime.Now;
 
-            _context.EmissionSource.Add(emissionSource);
+            // Nếu người dùng để trống => gán null
+            model.Location = string.IsNullOrWhiteSpace(model.Location) ? null : model.Location;
+            model.Description = string.IsNullOrWhiteSpace(model.Description) ? null : model.Description;
+
+            _context.EmissionSource.Add(model);
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true });
+            return Json(new { success = true, message = "Emission source created successfully!" });
         }
 
         // =============================
-        // EDIT (AJAX)
+        //  EDIT (AJAX)
         // =============================
         [HttpPost]
-        public async Task<IActionResult> Edit(int id, [FromForm] EmissionSource emissionSource)
+        public async Task<IActionResult> Edit(int id, [FromForm] EmissionSource model)
         {
-            if (id != emissionSource.EmissionSourceID)
-                return BadRequest(new { error = "Mismatched ID" });
+            if (id != model.EmissionSourceID)
+                return BadRequest(new { error = "Invalid ID" });
 
             var existing = await _context.EmissionSource.FindAsync(id);
             if (existing == null)
@@ -104,26 +102,26 @@ namespace env_analysis_project.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(new { error = "Invalid data" });
 
-            // Update fields manually (tránh overwrite CreatedAt)
-            existing.SourceCode = emissionSource.SourceCode;
-            existing.SourceName = emissionSource.SourceName;
-            existing.SourceTypeID = emissionSource.SourceTypeID;
-            existing.Location = emissionSource.Location;
-            existing.Latitude = emissionSource.Latitude;
-            existing.Longitude = emissionSource.Longitude;
-            existing.Description = emissionSource.Description;
-            existing.IsActive = emissionSource.IsActive;
+            // Cập nhật thủ công từng trường
+            existing.SourceCode = model.SourceCode;
+            existing.SourceName = model.SourceName;
+            existing.SourceTypeID = model.SourceTypeID;
+            existing.Location = string.IsNullOrWhiteSpace(model.Location) ? null : model.Location;
+            existing.Latitude = model.Latitude;
+            existing.Longitude = model.Longitude;
+            existing.Description = string.IsNullOrWhiteSpace(model.Description) ? null : model.Description;
+            existing.IsActive = model.IsActive;
             existing.UpdatedAt = DateTime.Now;
 
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true });
+            return Json(new { success = true, message = "Emission source updated successfully!" });
         }
 
         // =============================
-        // DELETE (AJAX)
+        //  DELETE (AJAX)
         // =============================
-        [HttpPost]
+        [HttpGet]
         public async Task<IActionResult> Delete(int id)
         {
             var emissionSource = await _context.EmissionSource.FindAsync(id);
@@ -133,11 +131,11 @@ namespace env_analysis_project.Controllers
             _context.EmissionSource.Remove(emissionSource);
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true });
+            return Json(new { success = true, message = "Emission source deleted successfully!" });
         }
 
         // =============================
-        // HELPER
+        //  HELPER
         // =============================
         private bool EmissionSourceExists(int id)
         {
