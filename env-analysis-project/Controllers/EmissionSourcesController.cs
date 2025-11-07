@@ -13,7 +13,7 @@ namespace env_analysis_project.Controllers
         {
             _context = context;
         }
- 
+
         // =============================
         //  LIST VIEW
         // =============================
@@ -71,8 +71,25 @@ namespace env_analysis_project.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create([FromForm] EmissionSource model)
         {
+            var isAjax = string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", System.StringComparison.OrdinalIgnoreCase);
+
             if (!ModelState.IsValid)
+            {
+                var errors = ModelState
+                    .Where(entry => entry.Value?.Errors?.Count > 0)
+                    .SelectMany(entry => entry.Value!.Errors.Select(error =>
+                        string.IsNullOrWhiteSpace(error.ErrorMessage)
+                            ? $"Invalid value for {entry.Key}"
+                            : error.ErrorMessage))
+                    .ToList();
+
+                if (isAjax)
+                {
+                    return BadRequest(new { success = false, errors });
+                }
+
                 return BadRequest(ModelState);
+            }
 
             model.CreatedAt = DateTime.Now;
 
@@ -83,7 +100,30 @@ namespace env_analysis_project.Controllers
             _context.EmissionSource.Add(model);
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true, message = "Emission source created successfully!" });
+            var response = new
+            {
+                success = true,
+                message = "Emission source created successfully!",
+                data = new
+                {
+                    model.EmissionSourceID,
+                    model.SourceCode,
+                    model.SourceName,
+                    model.SourceTypeID,
+                    model.Location,
+                    model.Latitude,
+                    model.Longitude,
+                    model.IsActive
+                }
+            };
+
+            if (isAjax)
+            {
+                return Json(response);
+            }
+
+            TempData["SuccessMessage"] = response.message;
+            return RedirectToAction(nameof(Index));
         }
 
         // =============================
@@ -121,18 +161,49 @@ namespace env_analysis_project.Controllers
         // =============================
         //  DELETE (AJAX)
         // =============================
-        [HttpGet]
-        public async Task<IActionResult> Delete(int id)
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Delete([FromBody] DeleteEmissionSourceRequest request)
         {
-            var emissionSource = await _context.EmissionSource.FindAsync(id);
+            var isAjax = string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
+
+            if (request == null || request.Id <= 0)
+            {
+                const string invalidMessage = "Invalid emission source identifier.";
+                if (isAjax)
+                {
+                    return BadRequest(new { success = false, error = invalidMessage });
+                }
+
+                TempData["ErrorMessage"] = invalidMessage;
+                return RedirectToAction(nameof(Index));
+            }
+
+            var emissionSource = await _context.EmissionSource.FindAsync(request.Id);
             if (emissionSource == null)
-                return NotFound(new { error = "Emission Source not found" });
+            {
+                if (isAjax)
+                {
+                    return NotFound(new { success = false, error = "Emission Source not found." });
+                }
+
+                TempData["ErrorMessage"] = "Emission Source not found.";
+                return RedirectToAction(nameof(Index));
+            }
 
             _context.EmissionSource.Remove(emissionSource);
             await _context.SaveChangesAsync();
 
-            return Json(new { success = true, message = "Emission source deleted successfully!" });
+            var response = new { success = true, message = "Emission source deleted successfully!" };
+            if (isAjax)
+            {
+                return Json(response);
+            }
+
+            TempData["SuccessMessage"] = response.message;
+            return RedirectToAction(nameof(Index));
         }
+
 
         // =============================
         //  HELPER
@@ -140,6 +211,11 @@ namespace env_analysis_project.Controllers
         private bool EmissionSourceExists(int id)
         {
             return _context.EmissionSource.Any(e => e.EmissionSourceID == id);
+        }
+
+        public sealed class DeleteEmissionSourceRequest
+        {
+            public int Id { get; set; }
         }
     }
 }
