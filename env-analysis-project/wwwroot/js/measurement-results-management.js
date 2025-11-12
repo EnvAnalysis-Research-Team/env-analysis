@@ -29,7 +29,6 @@
         airBody: document.getElementById('airResultsBody'),
         waterBadge: document.getElementById('waterCountBadge'),
         airBadge: document.getElementById('airCountBadge'),
-        refreshBtn: document.getElementById('refreshResultsBtn'),
         exportBtn: document.getElementById('exportResultsBtn'),
         tabButtons: document.querySelectorAll('.tab-button'),
         tabPanels: {

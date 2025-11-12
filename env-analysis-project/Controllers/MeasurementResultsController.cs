@@ -198,11 +198,6 @@ namespace env_analysis_project.Controllers
                 .Include(m => m.Parameter)
                 .AsQueryable();
 
-            if (!string.IsNullOrEmpty(normalizedType) && normalizedType != "all")
-            {
-                query = query.Where(m => m.type == normalizedType);
-            }
-
             var results = await query
                 .OrderByDescending(m => m.MeasurementDate)
                 .Select(m => ToDto(m))

@@ -19,12 +19,7 @@
             <p class="text-xs text-gray-500">Track, approve, and audit measurements across air and water sources.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <button id="refreshResultsBtn"
-                    type="button"
-                    class="inline-flex items-center justify-center gap-2 border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-gray-50 transition">
-                <i class="bi bi-arrow-repeat text-[11px]"></i>
-                Refresh
-            </button>
+            
             <button id="exportResultsBtn"
                     type="button"
                     class="inline-flex items-center justify-center gap-2 border border-blue-300 text-blue-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-50 transition">
@@ -34,7 +29,7 @@
             <button id="openAddResultBtn"
                     type="button"
                     class="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-700 transition">
-                <i class="bi bi-plus-circle text-[11px]"></i>
+                <i class="bi bi-plus text-[11px]"></i>
                 Add Result
             </button>
         </div>
@@ -309,6 +304,10 @@
 
 @section Scripts {
     <script>
+        function loadPage(){
+            window.location.reload();
+        } 
+
         window.measurementResultLookups = {
             emissionSources: @Html.Raw(emissionSourcesJson),
             parameters: @Html.Raw(parametersJson)
