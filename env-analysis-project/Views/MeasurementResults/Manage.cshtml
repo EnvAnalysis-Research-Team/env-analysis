@@ -12,116 +12,163 @@
     @Html.AntiForgeryToken()
 </form>
 
-<div class="max-w-8xl mx-auto bg-white shadow-sm rounded-md p-6 space-y-6">
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-            <h1 class="text-lg font-semibold text-gray-800">Measurement Results</h1>
-            <p class="text-xs text-gray-500">Track, approve, and audit measurements across air and water sources.</p>
+<div class="space-y-6">
+    <div class="max-w-8xl mx-auto bg-white border border-gray-200 rounded-md shadow-sm p-5 space-y-4">
+        <div class="flex flex-col lg:flex-row gap-6">
+            <div class="lg:w-1/3 space-y-2">
+                <div>
+                    <p class="text-sm font-semibold text-gray-800">Parameter comparison</p>
+                    <p class="text-xs text-gray-500">Select up to four parameters to visualize the last 12 months.</p>
+                </div>
+                <select id="parameterTrendSelect" multiple size="8"
+                        class="w-full border border-gray-300 rounded-sm px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white"></select>
+                <p id="trendSelectedHint" class="text-[11px] text-gray-500">0 / 4 selected</p>
+            </div>
+            <div class="lg:w-2/3 w-full">
+                <div class="relative h-72">
+                    <canvas id="parameterTrendChart" class="absolute inset-0 w-full h-full invisible"></canvas>
+                    <div id="trendChartPlaceholder"
+                         class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm text-center px-6">
+                        Select parameters to see their monthly min/max range.
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-            
-            <button id="exportResultsBtn"
-                    type="button"
-                    class="inline-flex items-center justify-center gap-2 border border-blue-300 text-blue-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-50 transition">
-                <i class="bi bi-download text-[11px]"></i>
-                Export
-            </button>
-            <button id="openAddResultBtn"
-                    type="button"
-                    class="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-700 transition">
-                <i class="bi bi-plus text-[11px]"></i>
-                Add Result
-            </button>
+        <div class="border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-semibold text-gray-700">Monthly min / max snapshot</p>
+                <span class="text-[11px] text-gray-500">Showing the latest 12 months</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left table-auto">
+                    <thead class="bg-gray-100 text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2">Month</th>
+                            <th class="px-3 py-2">Parameter</th>
+                            <th class="px-3 py-2">Min value</th>
+                            <th class="px-3 py-2">Max value</th>
+                            <th class="px-3 py-2">Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trendTableBody" class="divide-y divide-gray-100">
+                        <tr id="trendTableEmptyRow">
+                            <td colspan="5" class="px-3 py-5 text-center text-gray-400">
+                                Select up to four parameters to populate this table.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
-
-    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-        <div class="flex items-center justify-between">
-            <div class="flex gap-2 border-b border-gray-200 text-xs font-medium">
-                <button type="button"
-                        class="tab-button px-4 py-2 -mb-px border-b-2 border-blue-600 text-blue-600"
-                        data-tab="all">
-                    All
-                </button>
-                <button type="button"
-                        class="tab-button px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-blue-600"
-                        data-tab="water">
-                    Water
-                </button>
-                <button type="button"
-                        class="tab-button px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-blue-600"
-                        data-tab="air">
-                    Air
-                </button>
+    <div class="max-w-8xl mx-auto bg-white shadow-sm rounded-md p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+                <h1 class="text-lg font-semibold text-gray-800">Measurement Results</h1>
+                <p class="text-xs text-gray-500">Track, approve, and audit measurements across air and water sources.</p>
             </div>
-            <div class="flex items-center gap-4 text-[11px] text-gray-500">
-                <span id="waterCountBadge">0 results</span>
-                <span id="airCountBadge">0 results</span>
+            <div class="flex flex-wrap items-center gap-2">
+                
+                <button id="exportResultsBtn"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 border border-blue-300 text-blue-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-50 transition">
+                    <i class="bi bi-download text-[11px]"></i>
+                    Export
+                </button>
+                <button id="openAddResultBtn"
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-700 transition">
+                    <i class="bi bi-plus text-[11px]"></i>
+                    Add Result
+                </button>
             </div>
         </div>
 
-        <div id="tabPanel-all" class="tab-panel space-y-3">
-            <table class="w-full text-xs text-left table-auto">
-                <thead class="bg-gray-100 text-gray-700">
-                    <tr>
-                        <th class="px-3 py-2">Result ID</th>
-                        <th class="px-3 py-2">Type</th>
-                        <th class="px-3 py-2">Source</th>
-                        <th class="px-3 py-2">Parameter</th>
-                        <th class="px-3 py-2">Value</th>
-                        <th class="px-3 py-2">Measured</th>
-                        <th class="px-3 py-2 text-center">Status</th>
-                        <th class="px-3 py-2 text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="allResultsBody" class="divide-y divide-gray-200">
-                    <tr>
-                        <td colspan="8" class="px-3 py-6 text-center text-gray-400">Loading measurements...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+            <div class="flex items-center justify-between">
+                <div class="flex gap-2 border-b border-gray-200 text-xs font-medium">
+                    <button type="button"
+                            class="tab-button px-4 py-2 -mb-px border-b-2 border-blue-600 text-blue-600"
+                            data-tab="all">
+                        All
+                    </button>
+                    <button type="button"
+                            class="tab-button px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-blue-600"
+                            data-tab="water">
+                        Water
+                    </button>
+                    <button type="button"
+                            class="tab-button px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-blue-600"
+                            data-tab="air">
+                        Air
+                    </button>
+                </div>
+                <div class="flex items-center gap-4 text-[11px] text-gray-500">
+                    <span id="waterCountBadge">0 results</span>
+                    <span id="airCountBadge">0 results</span>
+                </div>
+            </div>
 
-        <div id="tabPanel-water" class="tab-panel hidden space-y-3">
-            <table class="w-full text-xs text-left table-auto">
-                <thead class="bg-gray-100 text-gray-700">
-                    <tr>
-                        <th class="px-3 py-2">Result ID</th>
-                        <th class="px-3 py-2">Source</th>
-                        <th class="px-3 py-2">Parameter</th>
-                        <th class="px-3 py-2">Value</th>
-                        <th class="px-3 py-2">Measured</th>
-                        <th class="px-3 py-2 text-center">Status</th>
-                        <th class="px-3 py-2 text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="waterResultsBody" class="divide-y divide-gray-200">
-                    <tr>
-                        <td colspan="7" class="px-3 py-6 text-center text-gray-400">Loading water measurements...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+            <div id="tabPanel-all" class="tab-panel space-y-3">
+                <table class="w-full text-xs text-left table-auto">
+                    <thead class="bg-gray-100 text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2">Type</th>
+                            <th class="px-3 py-2">Source</th>
+                            <th class="px-3 py-2">Parameter</th>
+                            <th class="px-3 py-2">Value</th>
+                            <th class="px-3 py-2">Measured</th>
+                            <th class="px-3 py-2 text-center">Status</th>
+                            <th class="px-3 py-2 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="allResultsBody" class="divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="8" class="px-3 py-6 text-center text-gray-400">Loading measurements...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
-        <div id="tabPanel-air" class="tab-panel hidden space-y-3">
-            <table class="w-full text-xs text-left table-auto">
-                <thead class="bg-gray-100 text-gray-700">
-                    <tr>
-                        <th class="px-3 py-2">Result ID</th>
-                        <th class="px-3 py-2">Source</th>
-                        <th class="px-3 py-2">Parameter</th>
-                        <th class="px-3 py-2">Value</th>
-                        <th class="px-3 py-2">Measured</th>
-                        <th class="px-3 py-2 text-center">Status</th>
-                        <th class="px-3 py-2 text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="airResultsBody" class="divide-y divide-gray-200">
-                    <tr>
-                        <td colspan="7" class="px-3 py-6 text-center text-gray-400">Loading air measurements...</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div id="tabPanel-water" class="tab-panel hidden space-y-3">
+                <table class="w-full text-xs text-left table-auto">
+                    <thead class="bg-gray-100 text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2">Source</th>
+                            <th class="px-3 py-2">Parameter</th>
+                            <th class="px-3 py-2">Value</th>
+                            <th class="px-3 py-2">Measured</th>
+                            <th class="px-3 py-2 text-center">Status</th>
+                            <th class="px-3 py-2 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="waterResultsBody" class="divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="7" class="px-3 py-6 text-center text-gray-400">Loading water measurements...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tabPanel-air" class="tab-panel hidden space-y-3">
+                <table class="w-full text-xs text-left table-auto">
+                    <thead class="bg-gray-100 text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2">Source</th>
+                            <th class="px-3 py-2">Parameter</th>
+                            <th class="px-3 py-2">Value</th>
+                            <th class="px-3 py-2">Measured</th>
+                            <th class="px-3 py-2 text-center">Status</th>
+                            <th class="px-3 py-2 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="airResultsBody" class="divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="7" class="px-3 py-6 text-center text-gray-400">Loading air measurements...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -317,7 +364,8 @@
             detail: '@Url.Action("DetailData", "MeasurementResults")',
             create: '@Url.Action("CreateAjax", "MeasurementResults")',
             update: '@Url.Action("UpdateAjax", "MeasurementResults")',
-            delete: '@Url.Action("DeleteAjax", "MeasurementResults")'
+            delete: '@Url.Action("DeleteAjax", "MeasurementResults")',
+            trend: '@Url.Action("ParameterTrends", "MeasurementResults")'
         };
     </script>
     <script src="~/js/measurement-results-management.js" asp-append-version="true"></script>

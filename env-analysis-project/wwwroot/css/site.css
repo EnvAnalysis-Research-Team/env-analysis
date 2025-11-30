@@ -20,3 +20,8 @@ html {
 body {
   margin-bottom: 60px;
 }
+
+/* Ensure Leaflet controls (zoom, attribution logo) do not overlap modals */
+#sourceMap .leaflet-control-container .leaflet-control {
+  z-index: 10 !important;
+}

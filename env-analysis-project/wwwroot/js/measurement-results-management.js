@@ -35,7 +35,12 @@
             all: document.getElementById('tabPanel-all'),
             water: document.getElementById('tabPanel-water'),
             air: document.getElementById('tabPanel-air')
-        }
+        },
+        trendSelect: document.getElementById('parameterTrendSelect'),
+        trendHint: document.getElementById('trendSelectedHint'),
+        trendTableBody: document.getElementById('trendTableBody'),
+        trendChartCanvas: document.getElementById('parameterTrendChart'),
+        trendChartPlaceholder: document.getElementById('trendChartPlaceholder')
     };
 
     const addForm = {
@@ -65,6 +70,14 @@
         results: [],
         activeTab: 'all'
     };
+
+    const trend = {
+        selection: new Set(),
+        chart: null
+    };
+
+    const MAX_TREND_PARAMETERS = 4;
+    const trendColorPalette = ['#2563eb', '#f97316', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6'];
 
     const unwrapApiResponse = (json) => {
         if (!json || typeof json !== 'object') return json;
@@ -110,9 +123,240 @@
         }
     };
 
+    const formatNumericValue = (value) => {
+        if (value === null || value === undefined) return '—';
+        const number = Number(value);
+        return Number.isFinite(number)
+            ? number.toLocaleString(undefined, { maximumFractionDigits: 3 })
+            : '—';
+    };
+
     const renderOptions = (select, items, valueKey, labelKey) => {
         if (!select) return;
         select.innerHTML = items.map(item => `<option value="${item[valueKey]}">${item[labelKey]}</option>`).join('');
+    };
+
+    const renderTrendOptions = () => {
+        if (!elements.trendSelect) return;
+        const items = lookups.parameters ?? [];
+        if (!items.length) {
+            elements.trendSelect.innerHTML = '';
+            elements.trendSelect.disabled = true;
+            return;
+        }
+        elements.trendSelect.disabled = false;
+        elements.trendSelect.innerHTML = items
+            .map(item => `<option value="${item.code}">${item.label} (${item.code})</option>`)
+            .join('');
+    };
+
+    const updateTrendHint = () => {
+        if (!elements.trendHint) return;
+        elements.trendHint.textContent = `${trend.selection.size} / ${MAX_TREND_PARAMETERS} selected`;
+    };
+
+    const hexToRgba = (hex, alpha = 1) => {
+        const sanitized = hex?.replace('#', '');
+        if (!sanitized || sanitized.length !== 6) return `rgba(37, 99, 235, ${alpha})`;
+        const numeric = parseInt(sanitized, 16);
+        const r = (numeric >> 16) & 255;
+        const g = (numeric >> 8) & 255;
+        const b = numeric & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
+    const toggleTrendPlaceholder = (hasData) => {
+        if (!elements.trendChartPlaceholder || !elements.trendChartCanvas) return;
+        elements.trendChartPlaceholder.classList.toggle('hidden', hasData);
+        elements.trendChartCanvas.classList.toggle('invisible', !hasData);
+    };
+
+    const clearTrendChart = () => {
+        if (trend.chart) {
+            trend.chart.destroy();
+            trend.chart = null;
+        }
+        toggleTrendPlaceholder(false);
+    };
+
+    const renderTrendChart = (payload) => {
+        if (!elements.trendChartCanvas) return;
+        if (trend.chart) {
+            trend.chart.destroy();
+            trend.chart = null;
+        }
+
+        const labels = payload?.labels ?? [];
+        const series = payload?.series ?? [];
+        if (!labels.length || !series.length) {
+            toggleTrendPlaceholder(false);
+            return;
+        }
+
+        toggleTrendPlaceholder(true);
+        const ctx = elements.trendChartCanvas.getContext('2d');
+        const datasets = [];
+
+        series.forEach((item, index) => {
+            const baseColor = trendColorPalette[index % trendColorPalette.length];
+            const minData = item.points.map(point => point.min);
+            const maxData = item.points.map(point => point.max);
+
+            datasets.push({
+                label: `${item.parameterName} (min)`,
+                data: minData,
+                borderColor: baseColor,
+                borderDash: [6, 6],
+                tension: 0.3,
+                radius: 0,
+                pointRadius: 0,
+                fill: false
+            });
+
+            datasets.push({
+                label: `${item.parameterName} (max)`,
+                data: maxData,
+                borderColor: baseColor,
+                backgroundColor: hexToRgba(baseColor, 0.18),
+                tension: 0.3,
+                radius: 0,
+                pointRadius: 0,
+                fill: '-1'
+            });
+        });
+
+        trend.chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { usePointStyle: true }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `${context.dataset.label}: ${formatNumericValue(context.parsed.y)}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            callback: (value) => formatNumericValue(value)
+                        }
+                    }
+                }
+            }
+        });
+    };
+
+    const renderTrendTable = (payload) => {
+        if (!elements.trendTableBody) return;
+        const emptyRow = `
+            <tr>
+                <td colspan="5" class="px-3 py-5 text-center text-gray-400">
+                    Select up to four parameters to populate this table.
+                </td>
+            </tr>`;
+
+        if (!payload || !Array.isArray(payload.series) || !payload.series.length) {
+            elements.trendTableBody.innerHTML = emptyRow;
+            return;
+        }
+
+        const rows = [];
+        payload.series.forEach(seriesItem => {
+            seriesItem.points.forEach(point => {
+                rows.push(`
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-3 py-2 whitespace-nowrap">${point.label}</td>
+                        <td class="px-3 py-2">${seriesItem.parameterName} (${seriesItem.parameterCode})</td>
+                        <td class="px-3 py-2">${formatNumericValue(point.min)}</td>
+                        <td class="px-3 py-2">${formatNumericValue(point.max)}</td>
+                        <td class="px-3 py-2">${seriesItem.unit ?? '-'}</td>
+                    </tr>
+                `);
+            });
+        });
+
+        elements.trendTableBody.innerHTML = rows.join('');
+    };
+
+    const loadParameterTrends = async (codes) => {
+        if (!elements.trendTableBody || !routes.trend) return;
+        if (!codes || !codes.length) {
+            renderTrendTable(null);
+            clearTrendChart();
+            return;
+        }
+
+        elements.trendTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="px-3 py-5 text-center text-gray-400">Loading trend data...</td>
+            </tr>`;
+
+        try {
+            const query = codes.map(code => `codes=${encodeURIComponent(code)}`).join('&');
+            const res = await fetch(`${routes.trend}?${query}`, { credentials: 'same-origin' });
+            if (!res.ok) await handleErrorResponse(res);
+            const json = await res.json();
+            if (json?.success === false) throw new Error(json?.message || 'Failed to load trend data.');
+            const payload = unwrapApiResponse(json);
+            renderTrendChart(payload);
+            renderTrendTable(payload);
+        } catch (error) {
+            console.error(error);
+            clearTrendChart();
+            elements.trendTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="px-3 py-5 text-center text-red-500">${error.message || 'Failed to load trend data.'}</td>
+                </tr>`;
+        }
+    };
+
+    const handleTrendSelectChange = () => {
+        if (!elements.trendSelect) return;
+        const selectedValues = Array.from(elements.trendSelect.options)
+            .filter(option => option.selected)
+            .map(option => option.value);
+
+        if (selectedValues.length > MAX_TREND_PARAMETERS) {
+            const previous = new Set(trend.selection);
+            const newlySelected = selectedValues.find(value => !previous.has(value));
+            if (newlySelected) {
+                const option = Array.from(elements.trendSelect.options).find(opt => opt.value === newlySelected);
+                if (option) option.selected = false;
+            }
+            alert(`You can select up to ${MAX_TREND_PARAMETERS} parameters.`);
+            return;
+        }
+
+        trend.selection = new Set(selectedValues);
+        updateTrendHint();
+        loadParameterTrends(selectedValues);
+    };
+
+    const initTrendSection = () => {
+        if (!elements.trendSelect) return;
+        renderTrendOptions();
+        const options = Array.from(elements.trendSelect.options);
+        const preselectCount = Math.min(2, options.length);
+        for (let i = 0; i < preselectCount; i += 1) {
+            options[i].selected = true;
+            trend.selection.add(options[i].value);
+        }
+        updateTrendHint();
+        elements.trendSelect.addEventListener('change', handleTrendSelectChange);
+        if (trend.selection.size > 0) {
+            loadParameterTrends(Array.from(trend.selection));
+        } else {
+            renderTrendTable(null);
+            clearTrendChart();
+        }
     };
 
     const renderTables = () => {
@@ -138,7 +382,6 @@
 
                 return `
                     <tr class="hover:bg-gray-50 transition">
-                        <td class="px-3 py-2 font-medium text-gray-900">#${result.resultID}</td>
                         ${typeColumn}
                         <td class="px-3 py-2 truncate" title="${result.emissionSourceName ?? ''}">${result.emissionSourceName ?? '-'}</td>
                         <td class="px-3 py-2 truncate" title="${result.parameterName ?? ''}">${result.parameterName ?? result.parameterCode}</td>
@@ -398,5 +641,6 @@
 
     initTabs();
     initSelects();
+    initTrendSection();
     loadResults();
 })();

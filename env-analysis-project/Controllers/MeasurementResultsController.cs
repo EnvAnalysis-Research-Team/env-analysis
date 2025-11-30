@@ -14,6 +14,7 @@ namespace env_analysis_project.Controllers
     public class MeasurementResultsController : Controller
     {
         private readonly env_analysis_projectContext _context;
+        private const int TrendParameterLimit = 4;
 
         public MeasurementResultsController(env_analysis_projectContext context)
         {
@@ -36,7 +37,8 @@ namespace env_analysis_project.Controllers
                 .Select(p => new ParameterLookup
                 {
                     Code = p.ParameterCode,
-                    Label = p.ParameterName
+                    Label = p.ParameterName,
+                    Unit = p.Unit
                 })
                 .ToListAsync();
 
@@ -210,6 +212,137 @@ namespace env_analysis_project.Controllers
                 .ToListAsync();
 
             return Ok(ApiResponse.Success(results));
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ParameterTrends([FromQuery] string[] codes)
+        {
+            var normalizedCodes = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var code in codes ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    continue;
+                }
+
+                var trimmed = code.Trim();
+                if (seen.Add(trimmed))
+                {
+                    normalizedCodes.Add(trimmed);
+                }
+            }
+
+            if (normalizedCodes.Count == 0)
+            {
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("At least one parameter must be selected."));
+            }
+
+            if (normalizedCodes.Count > TrendParameterLimit)
+            {
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>($"You can compare at most {TrendParameterLimit} parameters."));
+            }
+
+            var normalizedCodesUpper = normalizedCodes
+                .Select(c => c.ToUpperInvariant())
+                .ToList();
+
+            var aggregates = await _context.MeasurementResult
+                .Where(m => normalizedCodesUpper.Contains(m.ParameterCode.ToUpper()) &&
+                            m.Value.HasValue)
+                .Select(m => new
+                {
+                    m.ParameterCode,
+                    Date = m.MeasurementDate == default ? m.EntryDate : m.MeasurementDate,
+                    m.Value
+                })
+                .GroupBy(x => new { x.ParameterCode, Year = x.Date.Year, Month = x.Date.Month })
+                .Select(g => new ParameterAggregate
+                {
+                    ParameterCode = g.Key.ParameterCode,
+                    Year = g.Key.Year,
+                    Month = g.Key.Month,
+                    Min = g.Min(x => x.Value),
+                    Max = g.Max(x => x.Value)
+                })
+                .ToListAsync();
+
+            if (!aggregates.Any())
+            {
+                return Ok(ApiResponse.Success(new ParameterTrendResponse()));
+            }
+
+            var availableMonths = aggregates
+                .Select(a => new { a.Year, a.Month })
+                .Distinct()
+                .OrderByDescending(x => x.Year)
+                .ThenByDescending(x => x.Month)
+                .Take(12)
+                .ToList();
+
+            availableMonths.Reverse();
+
+            var monthKeySet = availableMonths
+                .Select(m => (m.Year, m.Month))
+                .ToHashSet();
+
+            var filteredAggregates = aggregates
+                .Where(a => monthKeySet.Contains((a.Year, a.Month)))
+                .ToList();
+
+            var parameterMetadata = await _context.Parameter
+                .Where(p => normalizedCodesUpper.Contains(p.ParameterCode.ToUpper()))
+                .Select(p => new ParameterLookup
+                {
+                    Code = p.ParameterCode,
+                    Label = p.ParameterName,
+                    Unit = p.Unit
+                })
+                .ToListAsync();
+
+            var metadataLookup = parameterMetadata
+                .GroupBy(p => p.Code, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            var aggregateLookup = filteredAggregates.ToDictionary(
+                agg => CreateAggregateKey(agg.ParameterCode, agg.Year, agg.Month),
+                agg => agg,
+                StringComparer.OrdinalIgnoreCase);
+
+            var months = availableMonths.Select(m => new DateTime(m.Year, m.Month, 1)).ToList();
+            var labels = months.Select(dt => dt.ToString("MMM yyyy")).ToArray();
+
+            var series = normalizedCodes.Select(code =>
+            {
+                metadataLookup.TryGetValue(code, out var meta);
+                var points = months.Select(month =>
+                {
+                    aggregateLookup.TryGetValue(CreateAggregateKey(code, month.Year, month.Month), out var aggregate);
+                    return new ParameterTrendPoint
+                    {
+                        Month = $"{month:yyyy-MM}",
+                        Label = month.ToString("MMM yyyy"),
+                        Min = aggregate?.Min,
+                        Max = aggregate?.Max
+                    };
+                }).ToArray();
+
+                return new ParameterTrendSeries
+                {
+                    ParameterCode = meta?.Code ?? code,
+                    ParameterName = meta?.Label ?? meta?.Code ?? code,
+                    Unit = meta?.Unit,
+                    Points = points
+                };
+            }).ToArray();
+
+            var response = new ParameterTrendResponse
+            {
+                Labels = labels,
+                Series = series
+            };
+
+            return Ok(ApiResponse.Success(response));
         }
 
         [HttpGet]
@@ -402,6 +535,7 @@ namespace env_analysis_project.Controllers
         {
             public string Code { get; set; } = string.Empty;
             public string Label { get; set; } = string.Empty;
+            public string? Unit { get; set; }
         }
 
         private IReadOnlyCollection<string> GetModelErrors()
@@ -443,5 +577,39 @@ namespace env_analysis_project.Controllers
             public DateTime? ApprovedAt { get; set; }
             public string? Remark { get; set; }
         }
+
+        private sealed class ParameterTrendResponse
+        {
+            public IReadOnlyList<string> Labels { get; init; } = Array.Empty<string>();
+            public IReadOnlyList<ParameterTrendSeries> Series { get; init; } = Array.Empty<ParameterTrendSeries>();
+        }
+
+        private sealed class ParameterTrendSeries
+        {
+            public string ParameterCode { get; init; } = string.Empty;
+            public string ParameterName { get; init; } = string.Empty;
+            public string? Unit { get; init; }
+            public IReadOnlyList<ParameterTrendPoint> Points { get; init; } = Array.Empty<ParameterTrendPoint>();
+        }
+
+        private sealed class ParameterTrendPoint
+        {
+            public string Month { get; init; } = string.Empty;
+            public string Label { get; init; } = string.Empty;
+            public double? Min { get; init; }
+            public double? Max { get; init; }
+        }
+
+        private sealed class ParameterAggregate
+        {
+            public string ParameterCode { get; init; } = string.Empty;
+            public int Year { get; init; }
+            public int Month { get; init; }
+            public double? Min { get; init; }
+            public double? Max { get; init; }
+        }
+
+        private static string CreateAggregateKey(string code, int year, int month) =>
+            $"{code?.Trim().ToUpperInvariant()}:{year:D4}:{month:D2}";
     }
 }
