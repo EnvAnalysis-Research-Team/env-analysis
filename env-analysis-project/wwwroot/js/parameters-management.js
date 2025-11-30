@@ -38,6 +38,11 @@
         }
     };
 
+    const unwrapApiResponse = (payload) => {
+        if (!payload || typeof payload !== 'object') return payload;
+        return Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+    };
+
     const MODAL_ANIMATION_MS = 200;
     const toggleModal = (modal, show) => {
         if (!modal) return;
@@ -130,18 +135,32 @@
         let message = `Request failed (${response.status})`;
         try {
             const payload = await response.json();
-            if (payload?.error) message = payload.error;
+            const errors = Array.isArray(payload?.errors) ? payload.errors.filter(Boolean) : [];
+            message = payload?.message || payload?.error || message;
+            if (errors.length) {
+                message = `${message}\n${errors.join('\n')}`;
+            }
         } catch {
             /* ignore */
         }
         throw new Error(message);
     };
 
+    const unwrapOrThrow = (json, fallbackMessage) => {
+        if (json?.success === false) {
+            const errors = Array.isArray(json?.errors) ? json.errors.filter(Boolean) : [];
+            const details = errors.length ? `\n${errors.join('\n')}` : '';
+            throw new Error(`${json?.message || fallbackMessage || 'Request failed.'}${details}`);
+        }
+        return unwrapApiResponse(json);
+    };
+
     const loadParameters = async () => {
         try {
             const res = await fetch(resolveRoute('list'), { credentials: 'same-origin' });
             if (!res.ok) return handleFetchError(res);
-            const data = await res.json();
+            const json = await res.json();
+            const data = unwrapOrThrow(json, 'Failed to load parameters.');
             state.parameters = Array.isArray(data) ? data : [];
             state.filtered = [...state.parameters];
             renderRows(state.filtered);
@@ -190,14 +209,13 @@
             });
 
             if (!res.ok) await handleFetchError(res);
-            const result = await res.json();
-            if (result?.success) {
-                alert(result.message || 'Parameter created.');
-                state.parameters.push(result.data);
-                filterRows();
-                resetAddFields();
-                toggleModal(addModal, false);
-            }
+            const json = await res.json();
+            const created = unwrapOrThrow(json, 'Failed to create parameter.');
+            alert(json?.message || 'Parameter created.');
+            state.parameters.push(created);
+            filterRows();
+            resetAddFields();
+            toggleModal(addModal, false);
         } catch (error) {
             console.error(error);
             alert(error.message || 'Failed to create parameter.');
@@ -209,7 +227,8 @@
         try {
             const res = await fetch(resolveRoute('detail', code), { credentials: 'same-origin' });
             if (!res.ok) await handleFetchError(res);
-            const data = await res.json();
+            const json = await res.json();
+            const data = unwrapOrThrow(json, 'Failed to load parameter detail.');
             fillEditFields(data);
             toggleModal(editModal, true);
         } catch (error) {
@@ -237,16 +256,15 @@
             });
 
             if (!res.ok) await handleFetchError(res);
-            const result = await res.json();
-            if (result?.success) {
-                alert(result.message || 'Updated successfully.');
-                const index = state.parameters.findIndex(p => p.parameterCode === code);
-                if (index > -1) {
-                    state.parameters[index] = result.data;
-                }
-                filterRows();
-                toggleModal(editModal, false);
+            const json = await res.json();
+            const updated = unwrapOrThrow(json, 'Failed to update parameter.');
+            alert(json?.message || 'Updated successfully.');
+            const index = state.parameters.findIndex(p => p.parameterCode === code);
+            if (index > -1) {
+                state.parameters[index] = updated;
             }
+            filterRows();
+            toggleModal(editModal, false);
         } catch (error) {
             console.error(error);
             alert(error.message || 'Failed to update parameter.');
@@ -264,14 +282,13 @@
                 credentials: 'same-origin'
             });
             if (!res.ok) await handleFetchError(res);
-            const result = await res.json();
-            if (result?.success) {
-                alert(result.message || 'Deleted.');
-                state.parameters = state.parameters.filter(p => p.parameterCode !== code);
-                filterRows();
-                if (!editModal.classList.contains('hidden') && document.getElementById('editParameterCode').value === code) {
-                    toggleModal(editModal, false);
-                }
+            const json = await res.json();
+            unwrapOrThrow(json, 'Failed to delete parameter.');
+            alert(json?.message || 'Deleted.');
+            state.parameters = state.parameters.filter(p => p.parameterCode !== code);
+            filterRows();
+            if (!editModal.classList.contains('hidden') && document.getElementById('editParameterCode').value === code) {
+                toggleModal(editModal, false);
             }
         } catch (error) {
             console.error(error);
