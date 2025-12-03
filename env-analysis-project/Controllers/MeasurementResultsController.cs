@@ -14,8 +14,6 @@ namespace env_analysis_project.Controllers
     public class MeasurementResultsController : Controller
     {
         private readonly env_analysis_projectContext _context;
-        private const int TrendParameterLimit = 4;
-
         public MeasurementResultsController(env_analysis_projectContext context)
         {
             _context = context;
@@ -192,63 +190,83 @@ namespace env_analysis_project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> ListData(string? type)
+        public async Task<IActionResult> ListData(string? type, int page = 1, int pageSize = 10, bool paged = false)
         {
-            var normalizedType = string.IsNullOrWhiteSpace(type) ? null : NormalizeType(type);
+            const int DefaultPageSize = 10;
+            const int MaxPageSize = 100;
 
-            var query = _context.MeasurementResult
+            var normalizedType = NormalizeTypeFilter(type);
+
+            var filteredQuery = _context.MeasurementResult
+                .AsNoTracking()
                 .Include(m => m.EmissionSource)
                 .Include(m => m.Parameter)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(normalizedType))
             {
-                query = query.Where(m => m.type == normalizedType);
+                filteredQuery = filteredQuery.Where(m => m.type == normalizedType);
             }
 
-            var results = await query
+            var totalItems = await filteredQuery.CountAsync();
+
+            var effectivePageSize = paged
+                ? Math.Min(Math.Max(pageSize, 1), MaxPageSize)
+                : (totalItems == 0 ? DefaultPageSize : totalItems);
+
+            var totalPages = Math.Max(1, (int)Math.Ceiling((double)Math.Max(totalItems, 0) / Math.Max(effectivePageSize, 1)));
+            var currentPage = paged ? Math.Min(Math.Max(page, 1), totalPages) : 1;
+
+            var orderedQuery = filteredQuery
                 .OrderByDescending(m => m.MeasurementDate)
+                .ThenByDescending(m => m.ResultID);
+
+            var pagedQuery = paged
+                ? orderedQuery.Skip((currentPage - 1) * effectivePageSize).Take(effectivePageSize)
+                : orderedQuery;
+
+            var items = await pagedQuery
                 .Select(m => ToDto(m))
                 .ToListAsync();
 
-            return Ok(ApiResponse.Success(results));
+            var pagination = new PaginationMetadata
+            {
+                Page = paged ? currentPage : 1,
+                PageSize = paged ? effectivePageSize : items.Count,
+                TotalItems = totalItems,
+                TotalPages = paged ? totalPages : 1
+            };
+
+            var response = new MeasurementResultListResponse
+            {
+                Items = items,
+                Pagination = pagination,
+                Summary = await BuildSummaryAsync()
+            };
+
+            return Ok(ApiResponse.Success(response));
         }
 
         [HttpGet]
-        public async Task<IActionResult> ParameterTrends([FromQuery] string[] codes)
+        public async Task<IActionResult> ParameterTrends([FromQuery] string code)
         {
-            var normalizedCodes = new List<string>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var code in codes ?? Array.Empty<string>())
+            if (string.IsNullOrWhiteSpace(code))
             {
-                if (string.IsNullOrWhiteSpace(code))
-                {
-                    continue;
-                }
-
-                var trimmed = code.Trim();
-                if (seen.Add(trimmed))
-                {
-                    normalizedCodes.Add(trimmed);
-                }
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Parameter code is required."));
             }
 
-            if (normalizedCodes.Count == 0)
-            {
-                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("At least one parameter must be selected."));
-            }
+            var trimmedCode = code.Trim();
+            var normalizedCodeUpper = trimmedCode.ToUpperInvariant();
 
-            if (normalizedCodes.Count > TrendParameterLimit)
-            {
-                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>($"You can compare at most {TrendParameterLimit} parameters."));
-            }
-
-            var normalizedCodesUpper = normalizedCodes
-                .Select(c => c.ToUpperInvariant())
+            var now = DateTime.UtcNow;
+            var startMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-11);
+            var months = Enumerable.Range(0, 12)
+                .Select(i => startMonth.AddMonths(i))
                 .ToList();
 
             var aggregates = await _context.MeasurementResult
-                .Where(m => normalizedCodesUpper.Contains(m.ParameterCode.ToUpper()) &&
+                .Where(m => m.ParameterCode != null &&
+                            m.ParameterCode.ToUpper() == normalizedCodeUpper &&
                             m.Value.HasValue)
                 .Select(m => new
                 {
@@ -256,85 +274,54 @@ namespace env_analysis_project.Controllers
                     Date = m.MeasurementDate == default ? m.EntryDate : m.MeasurementDate,
                     m.Value
                 })
-                .GroupBy(x => new { x.ParameterCode, Year = x.Date.Year, Month = x.Date.Month })
+                .Where(x => x.Date >= startMonth)
+                .GroupBy(x => new { Year = x.Date.Year, Month = x.Date.Month })
                 .Select(g => new ParameterAggregate
                 {
-                    ParameterCode = g.Key.ParameterCode,
+                    ParameterCode = g.First().ParameterCode,
                     Year = g.Key.Year,
                     Month = g.Key.Month,
-                    Min = g.Min(x => x.Value),
-                    Max = g.Max(x => x.Value)
+                    Average = g.Average(x => x.Value)
                 })
                 .ToListAsync();
 
-            if (!aggregates.Any())
-            {
-                return Ok(ApiResponse.Success(new ParameterTrendResponse()));
-            }
-
-            var availableMonths = aggregates
-                .Select(a => new { a.Year, a.Month })
-                .Distinct()
-                .OrderByDescending(x => x.Year)
-                .ThenByDescending(x => x.Month)
-                .Take(12)
-                .ToList();
-
-            availableMonths.Reverse();
-
-            var monthKeySet = availableMonths
-                .Select(m => (m.Year, m.Month))
-                .ToHashSet();
-
-            var filteredAggregates = aggregates
-                .Where(a => monthKeySet.Contains((a.Year, a.Month)))
-                .ToList();
-
-            var parameterMetadata = await _context.Parameter
-                .Where(p => normalizedCodesUpper.Contains(p.ParameterCode.ToUpper()))
+            var metadata = await _context.Parameter
+                .Where(p => p.ParameterCode.ToUpper() == normalizedCodeUpper)
                 .Select(p => new ParameterLookup
                 {
                     Code = p.ParameterCode,
                     Label = p.ParameterName,
                     Unit = p.Unit
                 })
-                .ToListAsync();
+                .FirstOrDefaultAsync();
 
-            var metadataLookup = parameterMetadata
-                .GroupBy(p => p.Code, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var aggregateLookup = aggregates.ToDictionary(
+                agg => $"{agg.Year:D4}-{agg.Month:D2}",
+                agg => agg);
 
-            var aggregateLookup = filteredAggregates.ToDictionary(
-                agg => CreateAggregateKey(agg.ParameterCode, agg.Year, agg.Month),
-                agg => agg,
-                StringComparer.OrdinalIgnoreCase);
-
-            var months = availableMonths.Select(m => new DateTime(m.Year, m.Month, 1)).ToList();
             var labels = months.Select(dt => dt.ToString("MMM yyyy")).ToArray();
 
-            var series = normalizedCodes.Select(code =>
+            var points = months.Select(month =>
             {
-                metadataLookup.TryGetValue(code, out var meta);
-                var points = months.Select(month =>
+                aggregateLookup.TryGetValue($"{month:yyyy}-{month:MM}", out var aggregate);
+                return new ParameterTrendPoint
                 {
-                    aggregateLookup.TryGetValue(CreateAggregateKey(code, month.Year, month.Month), out var aggregate);
-                    return new ParameterTrendPoint
-                    {
-                        Month = $"{month:yyyy-MM}",
-                        Label = month.ToString("MMM yyyy"),
-                        Min = aggregate?.Min,
-                        Max = aggregate?.Max
-                    };
-                }).ToArray();
-
-                return new ParameterTrendSeries
-                {
-                    ParameterCode = meta?.Code ?? code,
-                    ParameterName = meta?.Label ?? meta?.Code ?? code,
-                    Unit = meta?.Unit,
-                    Points = points
+                    Month = $"{month:yyyy-MM}",
+                    Label = month.ToString("MMM yyyy"),
+                    Value = aggregate?.Average
                 };
             }).ToArray();
+
+            var series = new[]
+            {
+                new ParameterTrendSeries
+                {
+                    ParameterCode = metadata?.Code ?? trimmedCode,
+                    ParameterName = metadata?.Label ?? trimmedCode,
+                    Unit = metadata?.Unit,
+                    Points = points
+                }
+            };
 
             var response = new ParameterTrendResponse
             {
@@ -433,6 +420,19 @@ namespace env_analysis_project.Controllers
                 return NotFound(ApiResponse.Fail<MeasurementResultDto>("Measurement result not found."));
             }
 
+            request.MeasurementDate = entity.MeasurementDate;
+
+            DateTime? computedApprovedAt;
+            if (request.IsApproved)
+            {
+                computedApprovedAt = entity.ApprovedAt ?? DateTime.UtcNow;
+            }
+            else
+            {
+                computedApprovedAt = null;
+            }
+            request.ApprovedAt = computedApprovedAt;
+
             var validationErrors = MeasurementResultValidator.Validate(request).ToList();
             if (!ModelState.IsValid)
             {
@@ -456,12 +456,11 @@ namespace env_analysis_project.Controllers
 
             entity.EmissionSourceID = request.EmissionSourceId;
             entity.ParameterCode = request.ParameterCode;
-            entity.MeasurementDate = request.MeasurementDate;
             entity.Value = request.Value;
             entity.Unit = string.IsNullOrWhiteSpace(request.Unit) ? null : request.Unit.Trim();
             entity.Remark = string.IsNullOrWhiteSpace(request.Remark) ? null : request.Remark.Trim();
             entity.IsApproved = request.IsApproved;
-            entity.ApprovedAt = request.IsApproved ? request.ApprovedAt : null;
+            entity.ApprovedAt = computedApprovedAt;
             entity.type = NormalizeType(request.Type ?? entity.type);
 
             await _context.SaveChangesAsync();
@@ -495,6 +494,25 @@ namespace env_analysis_project.Controllers
         private bool MeasurementResultExists(int id)
         {
             return _context.MeasurementResult.Any(e => e.ResultID == id);
+        }
+
+        private static string? NormalizeTypeFilter(string? input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return null;
+            }
+
+            var trimmed = input.Trim();
+            if (trimmed.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return trimmed.Equals("water", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("air", StringComparison.OrdinalIgnoreCase)
+                ? NormalizeType(trimmed)
+                : null;
         }
 
         private static string NormalizeType(string? input)
@@ -549,6 +567,32 @@ namespace env_analysis_project.Controllers
                 .ToArray();
         }
 
+        private async Task<MeasurementResultSummary> BuildSummaryAsync()
+        {
+            var typeCounts = await _context.MeasurementResult
+                .AsNoTracking()
+                .GroupBy(m => m.type)
+                .Select(g => new { Type = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var summary = new MeasurementResultSummary();
+            foreach (var entry in typeCounts)
+            {
+                summary.All += entry.Count;
+                var normalized = NormalizeType(entry.Type);
+                if (normalized == "air")
+                {
+                    summary.Air += entry.Count;
+                }
+                else
+                {
+                    summary.Water += entry.Count;
+                }
+            }
+
+            return summary;
+        }
+
         public sealed class MeasurementResultDto
         {
             public int ResultID { get; set; }
@@ -578,6 +622,28 @@ namespace env_analysis_project.Controllers
             public string? Remark { get; set; }
         }
 
+        private sealed class MeasurementResultListResponse
+        {
+            public IReadOnlyList<MeasurementResultDto> Items { get; init; } = Array.Empty<MeasurementResultDto>();
+            public PaginationMetadata Pagination { get; init; } = new PaginationMetadata();
+            public MeasurementResultSummary Summary { get; init; } = new MeasurementResultSummary();
+        }
+
+        private sealed class PaginationMetadata
+        {
+            public int Page { get; init; }
+            public int PageSize { get; init; }
+            public int TotalItems { get; init; }
+            public int TotalPages { get; init; }
+        }
+
+        private sealed class MeasurementResultSummary
+        {
+            public int All { get; set; }
+            public int Water { get; set; }
+            public int Air { get; set; }
+        }
+
         private sealed class ParameterTrendResponse
         {
             public IReadOnlyList<string> Labels { get; init; } = Array.Empty<string>();
@@ -596,8 +662,7 @@ namespace env_analysis_project.Controllers
         {
             public string Month { get; init; } = string.Empty;
             public string Label { get; init; } = string.Empty;
-            public double? Min { get; init; }
-            public double? Max { get; init; }
+            public double? Value { get; init; }
         }
 
         private sealed class ParameterAggregate
@@ -605,11 +670,7 @@ namespace env_analysis_project.Controllers
             public string ParameterCode { get; init; } = string.Empty;
             public int Year { get; init; }
             public int Month { get; init; }
-            public double? Min { get; init; }
-            public double? Max { get; init; }
+            public double? Average { get; init; }
         }
-
-        private static string CreateAggregateKey(string code, int year, int month) =>
-            $"{code?.Trim().ToUpperInvariant()}:{year:D4}:{month:D2}";
     }
 }
