@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -190,12 +191,13 @@ namespace env_analysis_project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> ListData(string? type, int page = 1, int pageSize = 10, bool paged = false)
+        public async Task<IActionResult> ListData(string? type, int page = 1, int pageSize = 10, bool paged = false, string? search = null)
         {
             const int DefaultPageSize = 10;
             const int MaxPageSize = 100;
 
             var normalizedType = NormalizeTypeFilter(type);
+            var trimmedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
 
             var filteredQuery = _context.MeasurementResult
                 .AsNoTracking()
@@ -206,6 +208,25 @@ namespace env_analysis_project.Controllers
             if (!string.IsNullOrEmpty(normalizedType))
             {
                 filteredQuery = filteredQuery.Where(m => m.type == normalizedType);
+            }
+
+            if (!string.IsNullOrWhiteSpace(trimmedSearch))
+            {
+                var likePattern = $"%{trimmedSearch}%";
+                var normalizedSearch = trimmedSearch.ToLowerInvariant();
+                var statusMatch = normalizedSearch switch
+                {
+                    "approved" => "approved",
+                    "pending" => "pending",
+                    _ => null
+                };
+
+                filteredQuery = filteredQuery.Where(m =>
+                    (m.EmissionSource != null && EF.Functions.Like(m.EmissionSource.SourceName ?? string.Empty, likePattern)) ||
+                    EF.Functions.Like(m.Parameter.ParameterName ?? string.Empty, likePattern) ||
+                    EF.Functions.Like(m.ParameterCode ?? string.Empty, likePattern) ||
+                    (statusMatch == "approved" && m.IsApproved) ||
+                    (statusMatch == "pending" && !m.IsApproved));
             }
 
             var totalItems = await filteredQuery.CountAsync();
@@ -248,7 +269,13 @@ namespace env_analysis_project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> ParameterTrends([FromQuery] string code)
+        public async Task<IActionResult> ParameterTrends(
+            [FromQuery] string code,
+            [FromQuery] string? startMonth,
+            [FromQuery] string? endMonth,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 12,
+            [FromQuery] int? sourceId = null)
         {
             if (string.IsNullOrWhiteSpace(code))
             {
@@ -258,31 +285,80 @@ namespace env_analysis_project.Controllers
             var trimmedCode = code.Trim();
             var normalizedCodeUpper = trimmedCode.ToUpperInvariant();
 
+            const int MaxMonths = 36;
+            const int DefaultTablePageSize = 12;
+            const int AlternateTablePageSize = 6;
             var now = DateTime.UtcNow;
-            var startMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-11);
-            var months = Enumerable.Range(0, 12)
-                .Select(i => startMonth.AddMonths(i))
-                .ToList();
+            var defaultEnd = new DateTime(now.Year, now.Month, 1);
+            var defaultStart = defaultEnd.AddMonths(-11);
 
-            var aggregates = await _context.MeasurementResult
+            DateTime? parsedStart = null;
+            DateTime? parsedEnd = null;
+
+            if (!string.IsNullOrWhiteSpace(startMonth))
+            {
+                if (!TryParseMonth(startMonth, out var tmpStart))
+                {
+                    return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Invalid start month format. Use yyyy-MM."));
+                }
+                parsedStart = tmpStart;
+            }
+
+            if (!string.IsNullOrWhiteSpace(endMonth))
+            {
+                if (!TryParseMonth(endMonth, out var tmpEnd))
+                {
+                    return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Invalid end month format. Use yyyy-MM."));
+                }
+                parsedEnd = tmpEnd;
+            }
+
+            var rangeStart = new DateTime((parsedStart ?? parsedEnd ?? defaultStart).Year, (parsedStart ?? parsedEnd ?? defaultStart).Month, 1);
+            var rangeEnd = new DateTime((parsedEnd ?? parsedStart ?? defaultEnd).Year, (parsedEnd ?? parsedStart ?? defaultEnd).Month, 1);
+
+            if (rangeEnd < rangeStart)
+            {
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("End month must be greater than or equal to start month."));
+            }
+
+            var months = new List<DateTime>();
+            var cursor = rangeStart;
+            while (cursor <= rangeEnd && months.Count < MaxMonths)
+            {
+                months.Add(cursor);
+                cursor = cursor.AddMonths(1);
+            }
+
+            if (months.Count == 0)
+            {
+                months.Add(rangeStart);
+            }
+
+            var effectiveStart = months.First();
+            var effectiveEndExclusive = months.Last().AddMonths(1);
+
+            var measurementQuery = _context.MeasurementResult
+                .AsNoTracking()
+                .Include(m => m.EmissionSource)
                 .Where(m => m.ParameterCode != null &&
                             m.ParameterCode.ToUpper() == normalizedCodeUpper &&
-                            m.Value.HasValue)
+                            m.Value.HasValue);
+
+            if (sourceId.HasValue)
+            {
+                measurementQuery = measurementQuery.Where(m => m.EmissionSourceID == sourceId.Value);
+            }
+
+            var measurements = await measurementQuery
                 .Select(m => new
                 {
                     m.ParameterCode,
                     Date = m.MeasurementDate == default ? m.EntryDate : m.MeasurementDate,
-                    m.Value
+                    m.Value,
+                    SourceName = m.EmissionSource != null ? m.EmissionSource.SourceName : null
                 })
-                .Where(x => x.Date >= startMonth)
-                .GroupBy(x => new { Year = x.Date.Year, Month = x.Date.Month })
-                .Select(g => new ParameterAggregate
-                {
-                    ParameterCode = g.First().ParameterCode,
-                    Year = g.Key.Year,
-                    Month = g.Key.Month,
-                    Average = g.Average(x => x.Value)
-                })
+                .Where(x => x.Date >= effectiveStart && x.Date < effectiveEndExclusive)
+                .OrderBy(x => x.Date)
                 .ToListAsync();
 
             var metadata = await _context.Parameter
@@ -295,38 +371,84 @@ namespace env_analysis_project.Controllers
                 })
                 .FirstOrDefaultAsync();
 
-            var aggregateLookup = aggregates.ToDictionary(
-                agg => $"{agg.Year:D4}-{agg.Month:D2}",
-                agg => agg);
+            var orderedMeasurements = measurements.ToList();
+            var uniqueDates = orderedMeasurements
+                .Select(entry => entry.Date)
+                .Distinct()
+                .OrderBy(d => d)
+                .ToList();
 
-            var labels = months.Select(dt => dt.ToString("MMM yyyy")).ToArray();
+            var labels = uniqueDates
+                .Select(date => date.ToString("dd MMM yyyy HH:mm"))
+                .ToArray();
 
-            var points = months.Select(month =>
+            var groupedSources = orderedMeasurements
+                .GroupBy(entry => string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName!)
+                .ToList();
+
+            var series = groupedSources.Select(group =>
             {
-                aggregateLookup.TryGetValue($"{month:yyyy}-{month:MM}", out var aggregate);
-                return new ParameterTrendPoint
+                var valueByDate = group
+                    .GroupBy(item => item.Date)
+                    .ToDictionary(g => g.Key, g => g.First().Value);
+
+                var seriesPoints = uniqueDates.Select(date => new ParameterTrendPoint
                 {
-                    Month = $"{month:yyyy-MM}",
-                    Label = month.ToString("MMM yyyy"),
-                    Value = aggregate?.Average
+                    Month = date.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    Label = date.ToString("dd MMM yyyy HH:mm"),
+                    Value = valueByDate.TryGetValue(date, out var value) ? value : null,
+                    SourceName = group.Key
+                }).ToList();
+
+                return new ParameterTrendSeries
+                {
+                    ParameterCode = metadata?.Code ?? trimmedCode,
+                    ParameterName = group.Key,
+                    Unit = metadata?.Unit,
+                    Points = seriesPoints
                 };
             }).ToArray();
 
-            var series = new[]
+            var tablePoints = orderedMeasurements.Select(entry => new ParameterTrendPoint
             {
-                new ParameterTrendSeries
+                Month = entry.Date.ToString("yyyy-MM-ddTHH:mm:ss"),
+                Label = entry.Date.ToString("dd MMM yyyy HH:mm"),
+                Value = entry.Value,
+                SourceName = string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName
+            }).ToList();
+
+            var totalItems = tablePoints.Count;
+            var normalizedPageSize = pageSize == AlternateTablePageSize ? AlternateTablePageSize : DefaultTablePageSize;
+            if (normalizedPageSize <= 0)
+            {
+                normalizedPageSize = DefaultTablePageSize;
+            }
+            var totalPages = Math.Max(1, (int)Math.Ceiling(Math.Max(totalItems, 0) / (double)normalizedPageSize));
+            var safePage = Math.Min(Math.Max(page, 1), totalPages);
+            var tableItems = tablePoints
+                .Skip((safePage - 1) * normalizedPageSize)
+                .Take(normalizedPageSize)
+                .ToArray();
+
+            var table = new TrendTablePage
+            {
+                Unit = metadata?.Unit,
+                Items = tableItems,
+                Pagination = new PaginationMetadata
                 {
-                    ParameterCode = metadata?.Code ?? trimmedCode,
-                    ParameterName = metadata?.Label ?? trimmedCode,
-                    Unit = metadata?.Unit,
-                    Points = points
-                }
+                    Page = safePage,
+                    PageSize = normalizedPageSize,
+                    TotalItems = totalItems,
+                    TotalPages = totalPages
+                },
+                SourceId = sourceId
             };
 
             var response = new ParameterTrendResponse
             {
                 Labels = labels,
-                Series = series
+                Series = series,
+                Table = table
             };
 
             return Ok(ApiResponse.Success(response));
@@ -648,6 +770,7 @@ namespace env_analysis_project.Controllers
         {
             public IReadOnlyList<string> Labels { get; init; } = Array.Empty<string>();
             public IReadOnlyList<ParameterTrendSeries> Series { get; init; } = Array.Empty<ParameterTrendSeries>();
+            public TrendTablePage Table { get; init; } = new TrendTablePage();
         }
 
         private sealed class ParameterTrendSeries
@@ -663,14 +786,31 @@ namespace env_analysis_project.Controllers
             public string Month { get; init; } = string.Empty;
             public string Label { get; init; } = string.Empty;
             public double? Value { get; init; }
+            public string? SourceName { get; init; }
         }
 
-        private sealed class ParameterAggregate
+        private sealed class TrendTablePage
         {
-            public string ParameterCode { get; init; } = string.Empty;
-            public int Year { get; init; }
-            public int Month { get; init; }
-            public double? Average { get; init; }
+            public IReadOnlyList<ParameterTrendPoint> Items { get; init; } = Array.Empty<ParameterTrendPoint>();
+            public PaginationMetadata Pagination { get; init; } = new PaginationMetadata();
+            public string? Unit { get; init; }
+            public int? SourceId { get; init; }
+        }
+
+        private static bool TryParseMonth(string? input, out DateTime month)
+        {
+            month = default;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return false;
+            }
+
+            return DateTime.TryParseExact(
+                input.Trim(),
+                "yyyy-MM",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out month);
         }
     }
 }

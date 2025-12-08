@@ -37,7 +37,17 @@
             air: document.getElementById('tabPanel-air')
         },
         trendSelect: document.getElementById('parameterTrendSelect'),
+        trendFilterForm: document.getElementById('trendFilterForm'),
+        trendFilterStart: document.getElementById('trendFilterStart'),
+        trendFilterEnd: document.getElementById('trendFilterEnd'),
+        trendFilterReset: document.getElementById('trendFilterReset'),
+        trendFilterSource: document.getElementById('trendFilterSource'),
         trendTableBody: document.getElementById('trendTableBody'),
+        trendTableSummary: document.getElementById('trendTableSummary'),
+        trendTablePageLabel: document.getElementById('trendTablePageLabel'),
+        trendTablePrev: document.getElementById('trendTablePrev'),
+        trendTableNext: document.getElementById('trendTableNext'),
+        trendTablePageSize: document.getElementById('trendTablePageSize'),
         trendChartCanvas: document.getElementById('parameterTrendChart'),
         trendChartPlaceholder: document.getElementById('trendChartPlaceholder'),
         paginationBar: document.getElementById('resultsPaginationBar'),
@@ -45,7 +55,10 @@
         paginationPageLabel: document.getElementById('resultsPaginationPageLabel'),
         paginationPrev: document.getElementById('resultsPrevPage'),
         paginationNext: document.getElementById('resultsNextPage'),
-        pageSizeSelect: document.getElementById('resultsPageSize')
+        pageSizeSelect: document.getElementById('resultsPageSize'),
+        resultsSearchInput: document.getElementById('resultsSearchInput'),
+        resultsSearchButton: document.getElementById('resultsSearchButton'),
+        resultsSearchReset: document.getElementById('resultsSearchReset')
     };
 
     const addForm = {
@@ -104,7 +117,8 @@
         },
         activeTab: 'all',
         pageSize: DEFAULT_PAGE_SIZE,
-        loadedTabs: new Set()
+        loadedTabs: new Set(),
+        searchQuery: ''
     };
 
     if (elements.pageSizeSelect) {
@@ -113,7 +127,22 @@
 
     const trend = {
         selectedCode: null,
-        chart: null
+        chart: null,
+        filter: {
+            startMonth: null,
+            endMonth: null,
+            sourceId: null
+        },
+        table: {
+            page: 1,
+            pageSize: 12,
+            pagination: {
+                page: 1,
+                pageSize: 12,
+                totalItems: 0,
+                totalPages: 1
+            }
+        }
     };
 
     const trendColorPalette = ['#2563eb', '#f97316', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6'];
@@ -187,6 +216,16 @@
         elements.trendSelect.innerHTML = items
             .map(item => `<option value="${item.code}">${item.label} (${item.code})</option>`)
             .join('');
+    };
+
+    const renderTrendSourceOptions = () => {
+        if (!elements.trendFilterSource) return;
+        const items = lookups.emissionSources ?? [];
+        const options = [
+            '<option value="">All sources</option>',
+            ...items.map(item => `<option value="${item.id}">${item.label}</option>`)
+        ];
+        elements.trendFilterSource.innerHTML = options.join('');
     };
 
     const hexToRgba = (hex, alpha = 1) => {
@@ -276,31 +315,86 @@
         });
     };
 
-    const renderTrendTable = (payload) => {
+    const updateTrendTableControls = (tablePayload, statusMessage) => {
+        if (!elements.trendTableSummary) return;
+        const pagination = tablePayload?.pagination ?? {
+            page: trend.table.page,
+            pageSize: trend.table.pageSize,
+            totalItems: 0,
+            totalPages: 1
+        };
+
+        trend.table.pagination = pagination;
+        trend.table.page = pagination.page ?? trend.table.page;
+        trend.table.pageSize = pagination.pageSize ?? trend.table.pageSize;
+
+        const totalItems = pagination.totalItems ?? 0;
+        const currentPage = pagination.page ?? 1;
+        const pageSize = pagination.pageSize ?? trend.table.pageSize;
+        const totalPages = Math.max(pagination.totalPages ?? 1, 1);
+
+        const start = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+        const end = totalItems === 0 ? 0 : Math.min(currentPage * pageSize, totalItems);
+
+        elements.trendTableSummary.textContent = statusMessage
+            ? statusMessage
+            : (totalItems === 0 ? 'No data' : `Showing ${start}-${end} of ${totalItems} measurements`);
+
+        if (elements.trendTablePageLabel) {
+            elements.trendTablePageLabel.textContent = `Page ${currentPage} of ${totalPages}`;
+        }
+        if (elements.trendTablePrev) {
+            elements.trendTablePrev.disabled = currentPage <= 1;
+        }
+        if (elements.trendTableNext) {
+            elements.trendTableNext.disabled = currentPage >= totalPages;
+        }
+        if (elements.trendTablePageSize) {
+            const size = Number(elements.trendTablePageSize.value);
+            if (size !== trend.table.pageSize) {
+                elements.trendTablePageSize.value = trend.table.pageSize.toString();
+            }
+        }
+    };
+
+    const renderTrendTable = (tablePayload) => {
         if (!elements.trendTableBody) return;
         const emptyRow = `
             <tr>
-                <td colspan="3" class="px-3 py-5 text-center text-gray-400">
-                    Select a parameter to see the last 12 months.
+                <td colspan="4" class="px-3 py-5 text-center text-gray-400">
+                    Select a parameter to see available measurements.
                 </td>
             </tr>`;
 
-        if (!payload || !Array.isArray(payload.series) || !payload.series.length) {
+        if (!tablePayload || !Array.isArray(tablePayload.items) || tablePayload.items.length === 0) {
             elements.trendTableBody.innerHTML = emptyRow;
+            updateTrendTableControls(null);
             return;
         }
 
-        const firstSeries = payload.series[0];
-        const unit = firstSeries?.unit ?? '-';
-        const rows = (firstSeries?.points ?? []).map(point => `
+        const unit = tablePayload.unit ?? '-';
+        const rows = tablePayload.items.map(point => `
             <tr class="hover:bg-gray-50 transition">
                 <td class="px-3 py-2 whitespace-nowrap">${point.label}</td>
+                <td class="px-3 py-2 truncate" title="${point.sourceName ?? ''}">${point.sourceName ?? '-'}</td>
                 <td class="px-3 py-2">${formatNumericValue(point.value)}</td>
                 <td class="px-3 py-2">${unit}</td>
             </tr>
         `);
 
         elements.trendTableBody.innerHTML = rows.join('') || emptyRow;
+        updateTrendTableControls(tablePayload);
+    };
+
+    const buildTrendUrl = (code) => {
+        const params = new URLSearchParams();
+        params.set('code', code);
+        if (trend.filter.startMonth) params.set('startMonth', trend.filter.startMonth);
+        if (trend.filter.endMonth) params.set('endMonth', trend.filter.endMonth);
+        if (trend.filter.sourceId != null) params.set('sourceId', trend.filter.sourceId.toString());
+        params.set('page', trend.table.page.toString());
+        params.set('pageSize', trend.table.pageSize.toString());
+        return `${routes.trend}?${params.toString()}`;
     };
 
     const loadParameterTrends = async (code) => {
@@ -315,15 +409,16 @@
             <tr>
                 <td colspan="3" class="px-3 py-5 text-center text-gray-400">Loading monthly data...</td>
             </tr>`;
+        updateTrendTableControls(null, 'Loading data...');
 
         try {
-            const res = await fetch(`${routes.trend}?code=${encodeURIComponent(code)}`, { credentials: 'same-origin' });
+            const res = await fetch(buildTrendUrl(code), { credentials: 'same-origin' });
             if (!res.ok) await handleErrorResponse(res);
             const json = await res.json();
             if (json?.success === false) throw new Error(json?.message || 'Failed to load trend data.');
             const payload = unwrapApiResponse(json);
             renderTrendChart(payload);
-            renderTrendTable(payload);
+            renderTrendTable(payload?.table);
         } catch (error) {
             console.error(error);
             clearTrendChart();
@@ -331,26 +426,91 @@
                 <tr>
                     <td colspan="3" class="px-3 py-5 text-center text-red-500">${error.message || 'Failed to load trend data.'}</td>
                 </tr>`;
+            updateTrendTableControls(null, 'Error loading data');
         }
     };
 
     const handleTrendSelectChange = () => {
         if (!elements.trendSelect) return;
         trend.selectedCode = elements.trendSelect.value || null;
+        trend.table.page = 1;
         loadParameterTrends(trend.selectedCode);
     };
 
     const initTrendSection = () => {
-        if (!elements.trendSelect) return;
-        renderTrendOptions();
-        elements.trendSelect.addEventListener('change', handleTrendSelectChange);
-        trend.selectedCode = elements.trendSelect.value || null;
+        if (elements.trendSelect) {
+            renderTrendOptions();
+            elements.trendSelect.addEventListener('change', () => {
+                trend.table.page = 1;
+                handleTrendSelectChange();
+            });
+            trend.selectedCode = elements.trendSelect.value || null;
+        }
+        renderTrendSourceOptions();
+
+        const submitTrendFilter = (event) => {
+            event.preventDefault();
+            const startValue = elements.trendFilterStart?.value || null;
+            const endValue = elements.trendFilterEnd?.value || null;
+            const sourceValue = elements.trendFilterSource?.value || '';
+            if (startValue && endValue && startValue > endValue) {
+                alert('End month must be greater than or equal to start month.');
+                return;
+            }
+            const parsedSource = sourceValue ? Number(sourceValue) : null;
+            trend.filter.startMonth = startValue;
+            trend.filter.endMonth = endValue;
+            trend.filter.sourceId = Number.isFinite(parsedSource) ? parsedSource : null;
+            trend.table.page = 1;
+            if (trend.selectedCode) {
+                loadParameterTrends(trend.selectedCode);
+            }
+        };
+
+        elements.trendFilterForm?.addEventListener('submit', submitTrendFilter);
+        elements.trendFilterReset?.addEventListener('click', () => {
+            if (elements.trendFilterStart) elements.trendFilterStart.value = '';
+            if (elements.trendFilterEnd) elements.trendFilterEnd.value = '';
+            if (elements.trendFilterSource) elements.trendFilterSource.value = '';
+            trend.filter.startMonth = null;
+            trend.filter.endMonth = null;
+            trend.filter.sourceId = null;
+            trend.table.page = 1;
+            if (trend.selectedCode) {
+                loadParameterTrends(trend.selectedCode);
+            }
+        });
+
+        elements.trendTablePrev?.addEventListener('click', () => {
+            if (trend.table.page <= 1) return;
+            trend.table.page -= 1;
+            loadParameterTrends(trend.selectedCode);
+        });
+
+        elements.trendTableNext?.addEventListener('click', () => {
+            if (trend.table.page >= (trend.table.pagination.totalPages || 1)) return;
+            trend.table.page += 1;
+            loadParameterTrends(trend.selectedCode);
+        });
+
+        elements.trendTablePageSize?.addEventListener('change', (event) => {
+            const selected = Number(event.target.value);
+            if (![6, 12].includes(selected)) {
+                event.target.value = trend.table.pageSize;
+                return;
+            }
+            if (selected === trend.table.pageSize) return;
+            trend.table.pageSize = selected;
+            trend.table.page = 1;
+            loadParameterTrends(trend.selectedCode);
+        });
+
         if (trend.selectedCode) {
             loadParameterTrends(trend.selectedCode);
-            return;
+        } else {
+            renderTrendTable(null);
+            clearTrendChart();
         }
-        renderTrendTable(null);
-        clearTrendChart();
     };
 
     const sanitizeTab = (tab) => (TAB_KEYS.includes(tab) ? tab : 'all');
@@ -586,6 +746,9 @@
         if (target !== 'all') {
             params.set('type', target);
         }
+        if (state.searchQuery) {
+            params.set('search', state.searchQuery);
+        }
         return `${routes.list}${routes.list.includes('?') ? '&' : '?'}${params.toString()}`;
     };
 
@@ -641,6 +804,18 @@
         }
         await loadResults(active);
         state.loadedTabs = new Set([active]);
+    };
+
+    const applyResultsSearch = (query) => {
+        const trimmed = (query || '').trim();
+        state.searchQuery = trimmed;
+        TAB_KEYS.forEach(tab => {
+            const pagination = ensurePaginationState(tab);
+            pagination.page = 1;
+        });
+        state.loadedTabs = new Set();
+        setLoadingState(state.activeTab);
+        loadResults(state.activeTab);
     };
 
     const collectPayload = (mode = 'add') => {
@@ -854,6 +1029,25 @@
         setLoadingState(state.activeTab);
         loadResults(state.activeTab);
     });
+
+    const bindSearchControls = () => {
+        const readValue = () => elements.resultsSearchInput?.value || '';
+        elements.resultsSearchButton?.addEventListener('click', () => applyResultsSearch(readValue()));
+        elements.resultsSearchInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyResultsSearch(readValue());
+            }
+        });
+        elements.resultsSearchReset?.addEventListener('click', () => {
+            if (elements.resultsSearchInput) elements.resultsSearchInput.value = '';
+            if (state.searchQuery) {
+                applyResultsSearch('');
+            }
+        });
+    };
+
+    bindSearchControls();
 
     elements.allBody?.addEventListener('click', tableClickHandler);
     elements.waterBody?.addEventListener('click', tableClickHandler);

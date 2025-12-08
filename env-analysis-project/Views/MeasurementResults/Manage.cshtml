@@ -18,10 +18,40 @@
             <div class="lg:w-1/3 space-y-2">
                 <div>
                     <p class="text-sm font-semibold text-gray-800">Parameter trends</p>
-                    <p class="text-xs text-gray-500">Select a parameter to see its values over the past 12 months.</p>
+                    <p class="text-xs text-gray-500">Select a parameter and optionally filter the month range.</p>
                 </div>
                 <select id="parameterTrendSelect"
                         class="w-full border border-gray-300 rounded-sm px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white"></select>
+                <form id="trendFilterForm" class="space-y-3 text-xs bg-gray-50 border border-dashed border-gray-200 rounded-sm p-3">
+                    <div class="grid grid-cols-1 gap-2">
+                        <label class="font-medium text-gray-700" for="trendFilterSource">Source</label>
+                        <select id="trendFilterSource"
+                                class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+                            <option value="">All sources</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2">
+                        <label class="font-medium text-gray-700" for="trendFilterStart">From month</label>
+                        <input id="trendFilterStart"
+                               type="month"
+                               class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white" />
+                    </div>
+                    <div class="grid grid-cols-1 gap-2">
+                        <label class="font-medium text-gray-700" for="trendFilterEnd">To month</label>
+                        <input id="trendFilterEnd"
+                               type="month"
+                               class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white" />
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-sm font-semibold transition">
+                            Apply filter
+                        </button>
+                        <button type="button" id="trendFilterReset"
+                                class="px-3 py-1.5 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-100 transition">
+                            Reset
+                        </button>
+                    </div>
+                </form>
             </div>
             <div class="lg:w-2/3 w-full">
                 <div class="relative h-72">
@@ -35,26 +65,54 @@
         </div>
         <div class="border-t border-gray-100 pt-4">
             <div class="flex items-center justify-between mb-2">
-                <p class="text-xs font-semibold text-gray-700">Monthly values</p>
-                <span class="text-[11px] text-gray-500">Latest 12 months</span>
+                <p class="text-xs font-semibold text-gray-700">Measurement values</p>
+                <span class="text-[11px] text-gray-500">Filtered history</span>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-xs text-left table-auto">
                     <thead class="bg-gray-100 text-gray-700">
                         <tr>
                             <th class="px-3 py-2">Month</th>
+                            <th class="px-3 py-2">Source</th>
                             <th class="px-3 py-2">Value</th>
                             <th class="px-3 py-2">Unit</th>
                         </tr>
                     </thead>
                     <tbody id="trendTableBody" class="divide-y divide-gray-100">
                         <tr id="trendTableEmptyRow">
-                            <td colspan="3" class="px-3 py-5 text-center text-gray-400">
-                                Select a parameter to see the latest months.
+                            <td colspan="4" class="px-3 py-5 text-center text-gray-400">
+                                Select a parameter to see available measurements.
                             </td>
                         </tr>
                     </tbody>
                 </table>
+                <div class="pt-3 border-t border-gray-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-[11px] text-gray-600">
+                    <div id="trendTableSummary">No data</div>
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <label class="flex items-center gap-2">
+                            <span class="text-gray-500">Rows per page</span>
+                            <select id="trendTablePageSize" class="border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                                <option value="6">6</option>
+                                <option value="12" selected>12</option>
+                            </select>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <span id="trendTablePageLabel">Page 1 of 1</span>
+                            <div class="inline-flex border border-gray-300 rounded-md overflow-hidden">
+                                <button type="button"
+                                        id="trendTablePrev"
+                                        class="px-3 py-1.5 text-xs text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                    Prev
+                                </button>
+                                <button type="button"
+                                        id="trendTableNext"
+                                        class="px-3 py-1.5 text-xs text-gray-600 border-l border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -77,6 +135,24 @@
                         class="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-700 transition">
                     <i class="bi bi-plus text-[11px]"></i>
                     Add Result
+                </button>
+            </div>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
+            <input id="resultsSearchInput"
+                   type="text"
+                   placeholder="Search source, parameter, or status..."
+                   class="w-full sm:w-72 border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+            <div class="flex gap-2">
+                <button type="button"
+                        id="resultsSearchButton"
+                        class="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-sm font-medium transition">
+                    Search
+                </button>
+                <button type="button"
+                        id="resultsSearchReset"
+                        class="inline-flex items-center justify-center border border-gray-300 text-gray-700 px-3 py-1.5 rounded-sm font-medium hover:bg-gray-100 transition">
+                    Reset
                 </button>
             </div>
         </div>
