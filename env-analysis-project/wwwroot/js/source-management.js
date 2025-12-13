@@ -11,7 +11,10 @@
         addTypeModal: document.getElementById('addTypeModal'),
         editTypeModal: document.getElementById('editTypeModal'),
         addSourceModal: document.getElementById('addSourceModal'),
-        editSourceModal: document.getElementById('editSourceModal')
+        editSourceModal: document.getElementById('editSourceModal'),
+        emissionSearchInput: document.getElementById('emissionSearchInput'),
+        emissionSearchReset: document.getElementById('emissionSearchReset'),
+        emissionNoMatchRow: document.getElementById('emissionNoMatchRow')
     };
 
     const escapeHtml = (value) => {
@@ -83,6 +86,46 @@
                 focusRowOnMap(row);
             });
         });
+    };
+
+    const buildEmissionSearchIndex = (row) => {
+        const tokens = [
+            row.dataset.name,
+            row.dataset.code,
+            row.dataset.location,
+            row.dataset.type,
+            row.dataset.status
+        ].filter(Boolean).map(value => value.toLowerCase());
+        row.dataset.searchIndex = tokens.join(' ');
+    };
+
+    const applyEmissionSearch = (query) => {
+        const normalized = (query || '').trim().toLowerCase();
+        let visibleCount = 0;
+        document.querySelectorAll('.emission-source-row').forEach(row => {
+            if (!row.dataset.searchIndex) {
+                buildEmissionSearchIndex(row);
+            }
+            const matches = !normalized || row.dataset.searchIndex.includes(normalized);
+            row.classList.toggle('hidden', !matches);
+            if (matches) visibleCount += 1;
+        });
+        if (dom.emissionNoMatchRow) {
+            dom.emissionNoMatchRow.classList.toggle('hidden', visibleCount !== 0);
+        }
+    };
+
+    const bindEmissionSearchControls = () => {
+        if (!dom.emissionSearchInput) return;
+        document.querySelectorAll('.emission-source-row').forEach(buildEmissionSearchIndex);
+        dom.emissionSearchInput.addEventListener('input', () => {
+            applyEmissionSearch(dom.emissionSearchInput.value);
+        });
+        dom.emissionSearchReset?.addEventListener('click', () => {
+            dom.emissionSearchInput.value = '';
+            applyEmissionSearch('');
+        });
+        applyEmissionSearch(dom.emissionSearchInput.value);
     };
 
     const initMap = () => {
@@ -474,5 +517,6 @@
         attachEmissionAddForm();
         attachEmissionSourceEvents();
         attachEmissionDetailEvents();
+        bindEmissionSearchControls();
     });
 })();

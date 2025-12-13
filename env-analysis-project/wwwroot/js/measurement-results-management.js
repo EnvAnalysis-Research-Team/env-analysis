@@ -58,7 +58,19 @@
         pageSizeSelect: document.getElementById('resultsPageSize'),
         resultsSearchInput: document.getElementById('resultsSearchInput'),
         resultsSearchButton: document.getElementById('resultsSearchButton'),
-        resultsSearchReset: document.getElementById('resultsSearchReset')
+        resultsSearchReset: document.getElementById('resultsSearchReset'),
+        filterModal: document.getElementById('resultsFilterModal'),
+        openFilterBtn: document.getElementById('openResultsFilterBtn'),
+        closeFilterBtn: document.getElementById('closeResultsFilterBtn'),
+        cancelFilterBtn: document.getElementById('cancelResultsFilterBtn'),
+        applyFilterBtn: document.getElementById('applyResultsFilterBtn'),
+        resetFilterBtn: document.getElementById('resetResultsFilterBtn'),
+        filterSourceSelect: document.getElementById('filterSourceSelect'),
+        filterParameterSelect: document.getElementById('filterParameterSelect'),
+        filterStatusSelect: document.getElementById('filterStatusSelect'),
+        filterStartDate: document.getElementById('filterStartDate'),
+        filterEndDate: document.getElementById('filterEndDate'),
+        activeFiltersBadge: document.getElementById('activeFiltersBadge')
     };
 
     const addForm = {
@@ -84,6 +96,14 @@
         remark: document.getElementById('editResultRemark')
     };
 
+    const filterForm = {
+        source: elements.filterSourceSelect,
+        parameter: elements.filterParameterSelect,
+        status: elements.filterStatusSelect,
+        startDate: elements.filterStartDate,
+        endDate: elements.filterEndDate
+    };
+
     const TAB_KEYS = ['all', 'water', 'air'];
     const DEFAULT_PAGE_SIZE = 10;
     const loadingMessages = {
@@ -97,6 +117,14 @@
         pageSize: DEFAULT_PAGE_SIZE,
         totalItems: 0,
         totalPages: 1
+    });
+
+    const createDefaultFilters = () => ({
+        sourceId: null,
+        parameterCode: null,
+        status: null,
+        startDate: null,
+        endDate: null
     });
 
     const state = {
@@ -118,7 +146,8 @@
         activeTab: 'all',
         pageSize: DEFAULT_PAGE_SIZE,
         loadedTabs: new Set(),
-        searchQuery: ''
+        searchQuery: '',
+        filters: createDefaultFilters()
     };
 
     if (elements.pageSizeSelect) {
@@ -202,6 +231,101 @@
     const renderOptions = (select, items, valueKey, labelKey) => {
         if (!select) return;
         select.innerHTML = items.map(item => `<option value="${item[valueKey]}">${item[labelKey]}</option>`).join('');
+    };
+
+    const setFilterFormValues = (values = state.filters) => {
+        const normalized = { ...createDefaultFilters(), ...values };
+        if (filterForm.source) {
+            filterForm.source.value = normalized.sourceId != null ? normalized.sourceId.toString() : '';
+        }
+        if (filterForm.parameter) {
+            filterForm.parameter.value = normalized.parameterCode ?? '';
+        }
+        if (filterForm.status) {
+            filterForm.status.value = normalized.status ?? '';
+        }
+        if (filterForm.startDate) {
+            filterForm.startDate.value = normalized.startDate ?? '';
+        }
+        if (filterForm.endDate) {
+            filterForm.endDate.value = normalized.endDate ?? '';
+        }
+    };
+
+    const renderFilterSelects = () => {
+        if (filterForm.source) {
+            const items = lookups.emissionSources ?? [];
+            const options = [
+                '<option value="">All sources</option>',
+                ...items.map(item => `<option value="${item.id}">${item.label}</option>`)
+            ];
+            filterForm.source.innerHTML = options.join('');
+        }
+        if (filterForm.parameter) {
+            const items = lookups.parameters ?? [];
+            const options = [
+                '<option value="">All parameters</option>',
+                ...items.map(item => `<option value="${item.code}">${item.label}</option>`)
+            ];
+            filterForm.parameter.innerHTML = options.join('');
+        }
+        setFilterFormValues();
+    };
+
+    const sanitizeStatusValue = (value) => {
+        const normalized = (value || '').trim().toLowerCase();
+        return normalized === 'approved' || normalized === 'pending' ? normalized : null;
+    };
+
+    const readFilterFormValues = () => {
+        const sourceValue = filterForm.source?.value ?? '';
+        const parameterValue = (filterForm.parameter?.value ?? '').trim();
+        const statusValue = filterForm.status?.value ?? '';
+        const startValue = filterForm.startDate?.value ?? '';
+        const endValue = filterForm.endDate?.value ?? '';
+
+        const parsedSource = sourceValue ? Number(sourceValue) : null;
+        return {
+            sourceId: Number.isFinite(parsedSource) ? parsedSource : null,
+            parameterCode: parameterValue || null,
+            status: sanitizeStatusValue(statusValue),
+            startDate: startValue || null,
+            endDate: endValue || null
+        };
+    };
+
+    const countActiveFilters = (filters = state.filters) => {
+        if (!filters) return 0;
+        let count = 0;
+        if (filters.sourceId != null) count += 1;
+        if (filters.parameterCode) count += 1;
+        if (filters.status) count += 1;
+        if (filters.startDate) count += 1;
+        if (filters.endDate) count += 1;
+        return count;
+    };
+
+    const updateFilterBadge = () => {
+        if (!elements.activeFiltersBadge) return;
+        const count = countActiveFilters();
+        if (count > 0) {
+            elements.activeFiltersBadge.textContent = count.toString();
+            elements.activeFiltersBadge.classList.remove('hidden');
+        } else {
+            elements.activeFiltersBadge.classList.add('hidden');
+        }
+    };
+
+    const applyAdvancedFilters = (payload) => {
+        state.filters = { ...createDefaultFilters(), ...payload };
+        TAB_KEYS.forEach(tab => {
+            const pagination = ensurePaginationState(tab);
+            pagination.page = 1;
+        });
+        state.loadedTabs = new Set();
+        updateFilterBadge();
+        setLoadingState(state.activeTab);
+        loadResults(state.activeTab);
     };
 
     const renderTrendOptions = () => {
@@ -631,7 +755,7 @@
         if (!body) return;
         const rows = state.datasets[tab] ?? [];
         if (!rows.length) {
-            const label = tab === 'all' ? 'measurement results' : `${tab} measurements`;
+            const label = tab === 'all' ? 'measurement data' : `${tab} measurements`;
             setTableMessage(tab, `No ${label} found.`);
             return;
         }
@@ -658,7 +782,7 @@
                             <button type="button"
                                     class="w-7 h-7 flex items-center justify-center border border-blue-300 rounded-md text-blue-600 hover:bg-blue-100 transition result-edit-btn"
                                     title="Edit result" data-id="${result.resultID}">
-                                <i class="bi bi-pencil text-[10px]"></i>
+                                <i class="bi bi-eye text-[10px]"></i>
                             </button>
                             <button type="button"
                                     class="w-7 h-7 flex items-center justify-center border border-red-400 text-red-500 rounded-md hover:bg-red-50 transition result-delete-btn"
@@ -736,6 +860,29 @@
         throw new Error(message);
     };
 
+    const appendSearchAndFilters = (params) => {
+        if (!params) return;
+        if (state.searchQuery) {
+            params.set('search', state.searchQuery);
+        }
+        const filters = state.filters ?? createDefaultFilters();
+        if (filters.sourceId != null) {
+            params.set('sourceId', filters.sourceId.toString());
+        }
+        if (filters.parameterCode) {
+            params.set('parameterCode', filters.parameterCode);
+        }
+        if (filters.status) {
+            params.set('status', filters.status);
+        }
+        if (filters.startDate) {
+            params.set('startDate', filters.startDate);
+        }
+        if (filters.endDate) {
+            params.set('endDate', filters.endDate);
+        }
+    };
+
     const buildListUrl = (tab) => {
         const target = sanitizeTab(tab);
         const params = new URLSearchParams();
@@ -746,9 +893,7 @@
         if (target !== 'all') {
             params.set('type', target);
         }
-        if (state.searchQuery) {
-            params.set('search', state.searchQuery);
-        }
+        appendSearchAndFilters(params);
         return `${routes.list}${routes.list.includes('?') ? '&' : '?'}${params.toString()}`;
     };
 
@@ -760,7 +905,7 @@
             const res = await fetch(buildListUrl(targetTab), { credentials: 'same-origin' });
             if (!res.ok) await handleErrorResponse(res);
             const json = await res.json();
-            if (json?.success === false) throw new Error(json?.message || 'Failed to load measurement results.');
+            if (json?.success === false) throw new Error(json?.message || 'Failed to load measurement data.');
             const payload = unwrapApiResponse(json);
             const isLegacyResponse = Array.isArray(payload);
             const normalized = normalizeResponsePayload(payload, targetTab, paginationSeed, isLegacyResponse);
@@ -792,7 +937,7 @@
             updateCountBadges();
         } catch (error) {
             console.error(error);
-            setErrorState(targetTab, error.message || 'Failed to load measurement results.');
+            setErrorState(targetTab, error.message || 'Failed to load measurement data.');
         }
     };
 
@@ -957,6 +1102,7 @@
         renderOptions(editForm.source, lookups.emissionSources ?? [], 'id', 'label');
         renderOptions(addForm.parameter, lookups.parameters ?? [], 'code', 'label');
         renderOptions(editForm.parameter, lookups.parameters ?? [], 'code', 'label');
+        renderFilterSelects();
     };
 
     const tableClickHandler = (event) => {
@@ -985,18 +1131,50 @@
     elements.updateEditBtn?.addEventListener('click', updateResult);
     elements.deleteEditBtn?.addEventListener('click', () => deleteResult(editForm.id.value));
 
+    elements.openFilterBtn?.addEventListener('click', () => {
+        setFilterFormValues();
+        toggleModal(elements.filterModal, true);
+    });
+    elements.closeFilterBtn?.addEventListener('click', () => toggleModal(elements.filterModal, false));
+    elements.cancelFilterBtn?.addEventListener('click', () => toggleModal(elements.filterModal, false));
+    elements.applyFilterBtn?.addEventListener('click', () => {
+        const values = readFilterFormValues();
+        if (values.startDate && values.endDate && values.startDate > values.endDate) {
+            alert('End date must be greater than or equal to start date.');
+            return;
+        }
+        applyAdvancedFilters(values);
+        toggleModal(elements.filterModal, false);
+    });
+    elements.resetFilterBtn?.addEventListener('click', () => {
+        const defaults = createDefaultFilters();
+        const hadFilters = countActiveFilters();
+        setFilterFormValues(defaults);
+        if (hadFilters > 0) {
+            applyAdvancedFilters(defaults);
+        } else {
+            state.filters = defaults;
+            updateFilterBadge();
+        }
+        toggleModal(elements.filterModal, false);
+    });
+
     elements.refreshBtn?.addEventListener('click', () => {
         setLoadingState(state.activeTab);
         loadResults(state.activeTab);
     });
     elements.exportBtn?.addEventListener('click', () => {
-        if (!routes.list) return;
+        const targetRoute = routes.export || routes.list;
+        if (!targetRoute) return;
         const params = new URLSearchParams();
         if (state.activeTab !== 'all') {
             params.set('type', state.activeTab);
         }
-        params.set('paged', 'false');
-        const url = `${routes.list}${routes.list.includes('?') ? '&' : '?'}${params.toString()}`;
+        appendSearchAndFilters(params);
+        if (!routes.export) {
+            params.set('paged', 'false');
+        }
+        const url = `${targetRoute}${targetRoute.includes('?') ? '&' : '?'}${params.toString()}`;
         window.open(url, '_blank');
     });
 
@@ -1032,17 +1210,36 @@
 
     const bindSearchControls = () => {
         const readValue = () => elements.resultsSearchInput?.value || '';
-        elements.resultsSearchButton?.addEventListener('click', () => applyResultsSearch(readValue()));
-        elements.resultsSearchInput?.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                applyResultsSearch(readValue());
-            }
+        let searchDebounce = null;
+        const triggerSearch = () => applyResultsSearch(readValue());
+        elements.resultsSearchInput?.addEventListener('input', () => {
+            if (searchDebounce) clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(triggerSearch, 300);
         });
         elements.resultsSearchReset?.addEventListener('click', () => {
-            if (elements.resultsSearchInput) elements.resultsSearchInput.value = '';
-            if (state.searchQuery) {
+            if (elements.resultsSearchInput) {
+                elements.resultsSearchInput.value = '';
+            }
+            if (searchDebounce) {
+                clearTimeout(searchDebounce);
+                searchDebounce = null;
+            }
+
+            const defaults = createDefaultFilters();
+            const hadFilters = countActiveFilters() > 0;
+            const hadSearch = !!state.searchQuery;
+
+            setFilterFormValues(defaults);
+            state.filters = defaults;
+            updateFilterBadge();
+
+            if (hadFilters) {
+                state.searchQuery = '';
+                applyAdvancedFilters(defaults);
+            } else if (hadSearch) {
                 applyResultsSearch('');
+            } else {
+                state.searchQuery = '';
             }
         });
     };
@@ -1055,5 +1252,6 @@
 
     initTabs();
     initSelects();
+    updateFilterBadge();
     initTrendSection();
 })();

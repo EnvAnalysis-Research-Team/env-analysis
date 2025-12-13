@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -31,6 +33,35 @@ namespace env_analysis_project.Controllers
         public IActionResult Manage()
         {
             return View();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ExportCsv()
+        {
+            var parameters = await _context.Parameter
+                .OrderBy(p => p.ParameterName)
+                .ToListAsync();
+
+            var builder = new StringBuilder();
+            builder.AppendLine("Code,Name,Unit,Standard,Description,Created");
+            foreach (var parameter in parameters)
+            {
+                var fields = new[]
+                {
+                    EscapeCsv(parameter.ParameterCode),
+                    EscapeCsv(parameter.ParameterName),
+                    EscapeCsv(parameter.Unit),
+                    EscapeCsv(parameter.StandardValue?.ToString(CultureInfo.InvariantCulture)),
+                    EscapeCsv(parameter.Description),
+                    EscapeCsv(parameter.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+                    //EscapeCsv(parameter.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
+                };
+                builder.AppendLine(string.Join(",", fields));
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+            var fileName = $"parameters-{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
+            return File(bytes, "text/csv", fileName);
         }
 
         // GET: Parameters/Details/5
@@ -347,6 +378,17 @@ namespace env_analysis_project.Controllers
             public string? Description { get; set; }
             public DateTime? CreatedAt { get; set; }
             public DateTime? UpdatedAt { get; set; }
+        }
+
+        private static string EscapeCsv(string? value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "\"\"";
+            }
+
+            var sanitized = value.Replace("\"", "\"\"");
+            return $"\"{sanitized}\"";
         }
     }
 }

@@ -19,7 +19,7 @@
 <div class="max-w-8xl mx-auto bg-white shadow-sm rounded-md p-6 space-y-6">
     <!-- HEADER -->
     <div class="flex flex-col md:flex-row justify-end md:items-center mb-4 gap-2">
-        <!-- Nút mở modal thêm Source Type -->
+        <!-- Nút m? modal thêm Source Type -->
         <button type="button" id="openAddTypeModalBtn"
             class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition">
             + Add source type
@@ -78,21 +78,24 @@
         </div>
     </div>
 
-    <!-- EMISSION SOURCE TABLE (unchanged) -->
+    <!-- EMISSION SOURCE TABLE -->
     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <div class="flex justify-between items-center mb-3">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <h2 class="text-sm font-semibold text-gray-700">Emission Sources</h2>
-            <form asp-action="Index" method="get" class="flex space-x-2">
-                <input type="text" name="search" placeholder="Search source..." value="@ViewData["CurrentFilter"]"
-                    class="text-xs border border-gray-300 rounded-md px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <input id="emissionSearchInput"
+                    type="text"
+                    placeholder="Type to filter sources..."
+                    class="text-xs border border-gray-300 rounded-md px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:outline-none w-64" />
 
-                <button type="submit"
-                    class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
-                    <i class="bi bi-search text-[9px]"></i>
-                    Search
+                <button type="button"
+                    id="emissionSearchReset"
+                    class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-md transition">
+                    <i class="bi bi-arrow-counterclockwise text-[9px]"></i>
+                    Reset
                 </button>
 
-                <!-- nút Add -->
+                <!-- n? Add -->
                 <button type="button" id="openAddSourceModalBtn"
                     class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
                     <i class="bi bi-plus text-[9px]"></i>
@@ -100,24 +103,12 @@
                 </button>
 
 
-                <a asp-action="ExportExcel" asp-controller="EmissionSource"
+                <a asp-action="ExportCsv" asp-controller="SourceManagement"
                     class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
                     <i class="bi bi-file-earmark-excel text-[9px]"></i>
                     Export
                 </a>
-
-                <a asp-action="Index" asp-controller="EmissionSource"
-                    class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-md transition">
-                    <i class="bi bi-arrow-clockwise text-[9px]"></i>
-                    Refresh
-                </a>
-
-                <button type="reset"
-                    class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-black text-xs font-medium px-2.5 py-1 rounded-md transition">
-                    <i class="bi bi-sliders text-[9px]"></i>
-                    Reset
-                </button>
-            </form>
+            </div>
         </div>
         <table class="w-full text-xs text-left border-t border-gray-200">
             <thead class="bg-gray-100 text-gray-700">
@@ -132,16 +123,20 @@
                     <th class="px-3 py-2 text-center">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200">
+            <tbody id="emissionSourcesTableBody" class="divide-y divide-gray-200">
                 @if (Model != null && Model.Any())
                 {
                     foreach (var src in Model)
                     {
+                        var statusTag = src.IsActive ? "active" : "inactive";
                         <tr class="hover:bg-gray-50 transition emission-source-row"
                             data-lat="@src.Latitude?.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                             data-lng="@src.Longitude?.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                             data-name="@src.SourceName"
-                            data-code="@src.SourceCode">
+                            data-code="@src.SourceCode"
+                            data-location="@src.Location"
+                            data-type="@src.SourceType?.SourceTypeName"
+                            data-status="@statusTag">
                             <td class="px-3 py-2">@src.SourceName</td>
                             <td class="px-3 py-2">@src.SourceCode</td>
                             <td class="px-3 py-2">@src.Location</td>
@@ -160,7 +155,7 @@
                             </td>
                             <td class="px-3 py-2 text-center space-x-2">
                                 <div class="flex items-center justify-center gap-2">
-                                    <!-- Nút xem chi tiết -->
+                                    <!-- Nút xem chi ti?t -->
                                     <button type="button"
                                         class="w-7 h-7 flex items-center justify-center border border-blue-300 rounded-md text-blue-600 hover:bg-blue-100 transition"
                                         title="View Details" data-id="@src.EmissionSourceID">
@@ -179,6 +174,11 @@
 
                         </tr>
                     }
+                    <tr id="emissionNoMatchRow" class="hidden">
+                        <td colspan="8" class="px-3 py-4 text-center text-gray-400">
+                            No emission sources match your search.
+                        </td>
+                    </tr>
                 }
                 else
                 {

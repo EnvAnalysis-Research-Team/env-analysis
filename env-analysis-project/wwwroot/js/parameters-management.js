@@ -11,6 +11,7 @@
 
     const tableBody = document.getElementById('parameterTableBody');
     const searchInput = document.getElementById('parameterSearchInput');
+    const exportBtn = document.getElementById('exportParameterBtn');
 
     const addModal = document.getElementById('addParameterModal');
     const openAddBtn = document.getElementById('openAddParameterBtn');
@@ -102,7 +103,7 @@
                                 class="w-7 h-7 flex items-center justify-center border border-blue-300 rounded-md text-blue-600 hover:bg-blue-100 transition parameter-edit-btn"
                                 title="Edit Parameter"
                                 data-code="${row.parameterCode}">
-                            <i class="bi bi-pencil text-[10px]"></i>
+                            <i class="bi bi-eye text-[10px]"></i>
                         </button>
                         <button type="button"
                                 class="w-7 h-7 flex items-center justify-center border border-red-400 text-red-500 rounded-md hover:bg-red-50 transition parameter-delete-btn"
@@ -328,6 +329,10 @@
     });
 
     searchInput?.addEventListener('input', filterRows);
+    exportBtn?.addEventListener('click', () => {
+        if (!routes.export) return;
+        window.open(routes.export, '_blank');
+    });
 
     // initial load
     loadParameters();

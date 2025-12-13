@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -191,43 +192,33 @@ namespace env_analysis_project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> ListData(string? type, int page = 1, int pageSize = 10, bool paged = false, string? search = null)
+        public async Task<IActionResult> ListData(
+            string? type,
+            int page = 1,
+            int pageSize = 10,
+            bool paged = false,
+            string? search = null,
+            int? sourceId = null,
+            string? parameterCode = null,
+            string? status = null,
+            DateTime? startDate = null,
+            DateTime? endDate = null)
         {
             const int DefaultPageSize = 10;
             const int MaxPageSize = 100;
 
             var normalizedType = NormalizeTypeFilter(type);
             var trimmedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+            var normalizedStatus = NormalizeStatusFilter(status);
 
-            var filteredQuery = _context.MeasurementResult
-                .AsNoTracking()
-                .Include(m => m.EmissionSource)
-                .Include(m => m.Parameter)
-                .AsQueryable();
-
-            if (!string.IsNullOrEmpty(normalizedType))
-            {
-                filteredQuery = filteredQuery.Where(m => m.type == normalizedType);
-            }
-
-            if (!string.IsNullOrWhiteSpace(trimmedSearch))
-            {
-                var likePattern = $"%{trimmedSearch}%";
-                var normalizedSearch = trimmedSearch.ToLowerInvariant();
-                var statusMatch = normalizedSearch switch
-                {
-                    "approved" => "approved",
-                    "pending" => "pending",
-                    _ => null
-                };
-
-                filteredQuery = filteredQuery.Where(m =>
-                    (m.EmissionSource != null && EF.Functions.Like(m.EmissionSource.SourceName ?? string.Empty, likePattern)) ||
-                    EF.Functions.Like(m.Parameter.ParameterName ?? string.Empty, likePattern) ||
-                    EF.Functions.Like(m.ParameterCode ?? string.Empty, likePattern) ||
-                    (statusMatch == "approved" && m.IsApproved) ||
-                    (statusMatch == "pending" && !m.IsApproved));
-            }
+            var filteredQuery = BuildFilteredQuery(
+                normalizedType,
+                trimmedSearch,
+                sourceId,
+                parameterCode,
+                normalizedStatus,
+                startDate,
+                endDate);
 
             var totalItems = await filteredQuery.CountAsync();
 
@@ -266,6 +257,41 @@ namespace env_analysis_project.Controllers
             };
 
             return Ok(ApiResponse.Success(response));
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ExportCsv(
+            string? type,
+            string? search = null,
+            int? sourceId = null,
+            string? parameterCode = null,
+            string? status = null,
+            DateTime? startDate = null,
+            DateTime? endDate = null)
+        {
+            var normalizedType = NormalizeTypeFilter(type);
+            var trimmedSearch = string.IsNullOrWhiteSpace(search) ? null : search?.Trim();
+            var normalizedStatus = NormalizeStatusFilter(status);
+
+            var filteredQuery = BuildFilteredQuery(
+                normalizedType,
+                trimmedSearch,
+                sourceId,
+                parameterCode,
+                normalizedStatus,
+                startDate,
+                endDate);
+
+            var orderedQuery = filteredQuery
+                .OrderByDescending(m => m.MeasurementDate)
+                .ThenByDescending(m => m.ResultID);
+
+            var entities = await orderedQuery.ToListAsync();
+            var dtos = entities.Select(ToDto).ToList();
+            var csv = BuildCsv(dtos);
+            var bytes = Encoding.UTF8.GetBytes(csv);
+            var fileName = $"measurement-results-{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
+            return File(bytes, "text/csv", fileName);
         }
 
         [HttpGet]
@@ -646,6 +672,89 @@ namespace env_analysis_project.Controllers
             return normalized is "water" or "air" ? normalized : "water";
         }
 
+        private static string? NormalizeStatusFilter(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return null;
+            }
+
+            var normalized = status.Trim().ToLowerInvariant();
+            return normalized is "approved" or "pending" ? normalized : null;
+        }
+
+        private IQueryable<MeasurementResult> BuildFilteredQuery(
+            string? normalizedType,
+            string? trimmedSearch,
+            int? sourceId,
+            string? parameterCode,
+            string? normalizedStatus,
+            DateTime? startDate,
+            DateTime? endDate)
+        {
+            var query = _context.MeasurementResult
+                .AsNoTracking()
+                .Include(m => m.EmissionSource)
+                .Include(m => m.Parameter)
+                .AsQueryable();
+
+            if (!string.IsNullOrEmpty(normalizedType))
+            {
+                query = query.Where(m => m.type == normalizedType);
+            }
+
+            if (sourceId.HasValue)
+            {
+                query = query.Where(m => m.EmissionSourceID == sourceId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(parameterCode))
+            {
+                var normalizedParameter = parameterCode.Trim().ToUpperInvariant();
+                query = query.Where(m => m.ParameterCode != null &&
+                                         m.ParameterCode.ToUpper() == normalizedParameter);
+            }
+
+            if (!string.IsNullOrEmpty(normalizedStatus))
+            {
+                var isApprovedFilter = normalizedStatus == "approved";
+                query = query.Where(m => m.IsApproved == isApprovedFilter);
+            }
+
+            if (startDate.HasValue)
+            {
+                var normalizedStart = startDate.Value.Date;
+                query = query.Where(m => m.MeasurementDate >= normalizedStart);
+            }
+
+            if (endDate.HasValue)
+            {
+                var normalizedEndExclusive = endDate.Value.Date.AddDays(1);
+                query = query.Where(m => m.MeasurementDate < normalizedEndExclusive);
+            }
+
+            if (!string.IsNullOrWhiteSpace(trimmedSearch))
+            {
+                var likePattern = $"%{trimmedSearch}%";
+                var normalizedSearch = trimmedSearch.ToLowerInvariant();
+                var statusMatch = normalizedSearch switch
+                {
+                    "approved" => "approved",
+                    "pending" => "pending",
+                    _ => null
+                };
+
+                query = query.Where(m =>
+                    (m.EmissionSource != null && EF.Functions.Like(m.EmissionSource.SourceName ?? string.Empty, likePattern)) ||
+                    EF.Functions.Like(m.Parameter.ParameterName ?? string.Empty, likePattern) ||
+                    EF.Functions.Like(m.ParameterCode ?? string.Empty, likePattern) ||
+                    (statusMatch == "approved" && m.IsApproved) ||
+                    (statusMatch == "pending" && !m.IsApproved));
+            }
+
+            return query;
+        }
+
         private static MeasurementResultDto ToDto(MeasurementResult measurement)
         {
             return new MeasurementResultDto
@@ -663,6 +772,48 @@ namespace env_analysis_project.Controllers
                 IsApproved = measurement.IsApproved,
                 ApprovedAt = measurement.ApprovedAt
             };
+        }
+
+        private static string BuildCsv(IEnumerable<MeasurementResultDto> items)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("Type,Source,Parameter,Value,Unit,Measurement Date,Status,Approved At,Remark");
+            foreach (var item in items)
+            {
+                var valueText = item.Value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+                var measurementDate = item.MeasurementDate?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty;
+                var statusText = item.IsApproved ? "Approved" : "Pending";
+                var approvedAt = item.ApprovedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty;
+                var remark = item.Remark ?? string.Empty;
+
+                var columns = new[]
+                {
+                    EscapeCsv(item.Type),
+                    EscapeCsv(item.EmissionSourceName),
+                    EscapeCsv(item.ParameterName),
+                    EscapeCsv(valueText),
+                    EscapeCsv(item.Unit ?? string.Empty),
+                    EscapeCsv(measurementDate),
+                    EscapeCsv(statusText),
+                    EscapeCsv(approvedAt),
+                    EscapeCsv(remark)
+                };
+
+                builder.AppendLine(string.Join(",", columns));
+            }
+
+            return builder.ToString();
+        }
+
+        private static string EscapeCsv(string? input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return "\"\"";
+            }
+
+            var sanitized = input.Replace("\"", "\"\"");
+            return $"\"{sanitized}\"";
         }
 
         private sealed class LookupOption

@@ -117,43 +117,43 @@
         </div>
     </div>
     <div class="max-w-8xl mx-auto bg-white shadow-sm rounded-md p-6 space-y-6">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div>
-                <h1 class="text-lg font-semibold text-gray-800">Measurement Results</h1>
+                <h1 class="text-lg font-semibold text-gray-800">Measurement Data</h1>
                 <p class="text-xs text-gray-500">Track, approve, and audit measurements across air and water sources.</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-                
-                <button id="exportResultsBtn"
-                        type="button"
-                        class="inline-flex items-center justify-center gap-2 border border-blue-300 text-blue-600 px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-50 transition">
-                    <i class="bi bi-download text-[11px]"></i>
-                    Export
-                </button>
-                <button id="openAddResultBtn"
-                        type="button"
-                        class="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-blue-700 transition">
-                    <i class="bi bi-plus text-[11px]"></i>
-                    Add Result
-                </button>
-            </div>
-        </div>
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-            <input id="resultsSearchInput"
-                   type="text"
-                   placeholder="Search source, parameter, or status..."
-                   class="w-full sm:w-72 border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
-            <div class="flex gap-2">
-                <button type="button"
-                        id="resultsSearchButton"
-                        class="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-sm font-medium transition">
-                    Search
-                </button>
-                <button type="button"
-                        id="resultsSearchReset"
-                        class="inline-flex items-center justify-center border border-gray-300 text-gray-700 px-3 py-1.5 rounded-sm font-medium hover:bg-gray-100 transition">
-                    Reset
-                </button>
+            <div class="w-full flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:justify-end text-xs">
+                <input id="resultsSearchInput"
+                       type="text"
+                       placeholder="Search source, parameter, or status..."
+                       class="w-full sm:w-72 text-xs border border-gray-300 rounded-md px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button"
+                            id="resultsSearchReset"
+                            class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-md transition">
+                        <i class="bi bi-arrow-counterclockwise text-[9px]"></i>
+                        Reset
+                    </button>
+                    <button type="button"
+                            id="openResultsFilterBtn"
+                            class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-md transition">
+                        <i class="bi bi-sliders text-[9px]"></i>
+                        Filters
+                        <span id="activeFiltersBadge" class="hidden text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full leading-none">0</span>
+                    </button>
+                    <button id="exportResultsBtn"
+                            type="button"
+                            class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
+                        <i class="bi bi-download text-[9px]"></i>
+                        Export
+                    </button>
+                    <button id="openAddResultBtn"
+                            type="button"
+                            class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
+                        <i class="bi bi-plus text-[9px]"></i>
+                        Add Result
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -359,6 +359,75 @@
     </div>
 </div>
 
+<!-- Filter Results Modal -->
+<div id="resultsFilterModal" class="fixed inset-0 bg-black bg-opacity-40 hidden items-start justify-center z-50 p-4 pt-16 transition-all duration-200 opacity-0 -translate-y-5">
+    <div class="bg-white rounded-md shadow-lg w-full max-w-xl p-5 space-y-4 h-fit">
+        <div class="flex justify-between items-center border-b border-gray-200 pb-2">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-700">Filter Measurement Data</h2>
+                <p class="text-[11px] text-gray-500">Narrow results by source, parameter, status, or time range.</p>
+            </div>
+            <button type="button" id="closeResultsFilterBtn" class="text-gray-400 hover:text-gray-600">
+                <i class="bi bi-x-lg text-xs"></i>
+            </button>
+        </div>
+        <div class="space-y-3 text-xs">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-medium text-gray-700 mb-1">Emission Source</label>
+                    <select id="filterSourceSelect" class="w-full border border-gray-300 rounded-sm px-3 py-1.5 bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                        <option value="">All sources</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-medium text-gray-700 mb-1">Parameter</label>
+                    <select id="filterParameterSelect" class="w-full border border-gray-300 rounded-sm px-3 py-1.5 bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                        <option value="">All parameters</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-medium text-gray-700 mb-1">Status</label>
+                    <select id="filterStatusSelect" class="w-full border border-gray-300 rounded-sm px-3 py-1.5 bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                        <option value="">All statuses</option>
+                        <option value="approved">Approved</option>
+                        <option value="pending">Pending</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-medium text-gray-700 mb-1">Measurement Date</label>
+                    <div class="grid grid-cols-1 gap-2">
+                        <div class="space-y-1">
+                            <span class="text-[11px] text-gray-500 block">From</span>
+                            <input type="date" id="filterStartDate" class="w-full border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+                        </div>
+                        <div class="space-y-1">
+                            <span class="text-[11px] text-gray-500 block">To</span>
+                            <input type="date" id="filterEndDate" class="w-full border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-between items-center pt-2">
+            <button type="button" id="resetResultsFilterBtn" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-sm transition inline-flex items-center gap-1">
+                <i class="bi bi-arrow-counterclockwise text-[11px]"></i>
+                Clear Filters
+            </button>
+            <div class="flex gap-2">
+                <button type="button" id="cancelResultsFilterBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-sm transition">
+                    Cancel
+                </button>
+                <button type="button" id="applyResultsFilterBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-sm transition inline-flex items-center gap-1">
+                    <i class="bi bi-sliders text-[11px]"></i>
+                    Apply Filters
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Edit Result Modal -->
 <div id="editResultModal" class="fixed inset-0 bg-black bg-opacity-40 hidden items-start justify-center z-50 p-4 pt-16 transition-all duration-200 opacity-0 -translate-y-5">
     <div class="bg-white rounded-md shadow-lg w-full max-w-2xl p-5 space-y-4 h-fit">
@@ -477,7 +546,8 @@
             create: '@Url.Action("CreateAjax", "MeasurementResults")',
             update: '@Url.Action("UpdateAjax", "MeasurementResults")',
             delete: '@Url.Action("DeleteAjax", "MeasurementResults")',
-            trend: '@Url.Action("ParameterTrends", "MeasurementResults")'
+            trend: '@Url.Action("ParameterTrends", "MeasurementResults")',
+            export: '@Url.Action("ExportCsv", "MeasurementResults")'
         };
     </script>
     <script src="~/js/measurement-results-management.js" asp-append-version="true"></script>
