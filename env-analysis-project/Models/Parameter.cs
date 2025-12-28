@@ -21,6 +21,15 @@ namespace env_analysis_project.Models
         [StringLength(255)]
         public string Description { get; set; }
 
+        private string _type = "water";
+
+        [StringLength(50)]
+        public string Type
+        {
+            get => _type;
+            set => _type = ParameterTypeHelper.Normalize(value);
+        }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

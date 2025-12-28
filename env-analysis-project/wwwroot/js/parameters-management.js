@@ -83,6 +83,7 @@
     const resetAddFields = () => {
         document.getElementById('addParameterCode').value = '';
         document.getElementById('addParameterName').value = '';
+        document.getElementById('addParameterType').value = 'water';
         document.getElementById('addParameterUnit').value = '';
         document.getElementById('addParameterStandard').value = '';
         document.getElementById('addParameterDescription').value = '';
@@ -92,6 +93,7 @@
         document.getElementById('editParameterCode').value = data.parameterCode;
         document.getElementById('editParameterCodeDisplay').value = data.parameterCode;
         document.getElementById('editParameterName').value = data.parameterName ?? '';
+        document.getElementById('editParameterType').value = (data.type || 'water').toLowerCase();
         document.getElementById('editParameterUnit').value = data.unit ?? '';
         document.getElementById('editParameterStandard').value = data.standardValue ?? '';
         document.getElementById('editParameterDescription').value = data.description ?? '';
@@ -148,6 +150,7 @@
             <tr class="${rowClasses}">
                 <td class="px-3 py-2 font-medium text-gray-900">${row.parameterCode}</td>
                 <td class="px-3 py-2">${row.parameterName ?? ''}</td>
+                <td class="px-3 py-2 capitalize">${row.type ?? 'water'}</td>
                 <td class="px-3 py-2">${row.unit ?? '-'}</td>
                 <td class="px-3 py-2">${row.standardValue ?? '-'}</td>
                 <td class="px-3 py-2 text-xs text-gray-600">${row.description ?? '-'}</td>
@@ -194,7 +197,8 @@
             state.filtered = state.parameters.filter(item =>
                 item.parameterCode.toLowerCase().includes(keyword) ||
                 (item.parameterName ?? '').toLowerCase().includes(keyword) ||
-                (item.unit ?? '').toLowerCase().includes(keyword)
+                (item.unit ?? '').toLowerCase().includes(keyword) ||
+                (item.type ?? '').toLowerCase().includes(keyword)
             );
         }
         state.page = 1;
@@ -233,7 +237,8 @@
             const data = unwrapOrThrow(json, 'Failed to load parameters.');
             state.parameters = Array.isArray(data) ? data.map(item => ({
                 ...item,
-                isDeleted: !!item.isDeleted
+                isDeleted: !!item.isDeleted,
+                type: (item.type || 'water').toLowerCase()
             })) : [];
             state.filtered = [...state.parameters];
             renderRows(state.filtered);
@@ -251,6 +256,7 @@
         const unit = document.getElementById(`${prefix}ParameterUnit`)?.value.trim();
         const standardRaw = document.getElementById(`${prefix}ParameterStandard`)?.value;
         const description = document.getElementById(`${prefix}ParameterDescription`)?.value.trim();
+        const type = (document.getElementById(`${prefix}ParameterType`)?.value || 'water').toLowerCase();
 
         const standardValue = standardRaw === '' ? null : Number(standardRaw);
         if (standardValue !== null && Number.isNaN(standardValue)) {
@@ -260,6 +266,7 @@
         return {
             parameterCode: code,
             parameterName: name,
+            type,
             unit: unit || null,
             standardValue,
             description: description || null
@@ -287,7 +294,8 @@
             alert(json?.message || 'Parameter created.');
             state.parameters.push({
                 ...created,
-                isDeleted: !!created.isDeleted
+                isDeleted: !!created.isDeleted,
+                type: (created.type || 'water').toLowerCase()
             });
             filterRows();
             resetAddFields();
@@ -340,7 +348,8 @@
                 state.parameters[index] = {
                     ...state.parameters[index],
                     ...updated,
-                    isDeleted: !!updated.isDeleted
+                    isDeleted: !!updated.isDeleted,
+                    type: (updated.type || state.parameters[index].type || 'water').toLowerCase()
                 };
             }
             filterRows();
@@ -370,7 +379,8 @@
                 state.parameters[index] = {
                     ...state.parameters[index],
                     ...deleted,
-                    isDeleted: true
+                    isDeleted: true,
+                    type: (deleted.type || state.parameters[index].type || 'water').toLowerCase()
                 };
             }
             filterRows();
@@ -401,7 +411,8 @@
                 state.parameters[index] = {
                     ...state.parameters[index],
                     ...restored,
-                    isDeleted: false
+                    isDeleted: false,
+                    type: (restored.type || state.parameters[index].type || 'water').toLowerCase()
                 };
             }
             filterRows();

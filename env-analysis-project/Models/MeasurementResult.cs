@@ -32,8 +32,5 @@ namespace env_analysis_project.Models
 
         public bool IsApproved { get; set; }
         public DateTime? ApprovedAt { get; set; }
-        [StringLength (50)]
-        public string type { get; set; }
-
     }
 }

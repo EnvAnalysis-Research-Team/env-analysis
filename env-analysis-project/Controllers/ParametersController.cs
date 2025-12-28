@@ -101,8 +101,9 @@ namespace env_analysis_project.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("ParameterCode,ParameterName,Unit,StandardValue,Description,CreatedAt,UpdatedAt")] Parameter parameter)
+        public async Task<IActionResult> Create([Bind("ParameterCode,ParameterName,Type,Unit,StandardValue,Description,CreatedAt,UpdatedAt")] Parameter parameter)
         {
+            parameter.Type = ParameterTypeHelper.Normalize(parameter.Type);
             var validationErrors = ParameterValidator.Validate(parameter).ToList();
             if (!ModelState.IsValid)
             {
@@ -122,6 +123,7 @@ namespace env_analysis_project.Controllers
             parameter.ParameterName = parameter.ParameterName.Trim();
             parameter.Unit = string.IsNullOrWhiteSpace(parameter.Unit) ? null : parameter.Unit.Trim();
             parameter.Description = string.IsNullOrWhiteSpace(parameter.Description) ? null : parameter.Description.Trim();
+            parameter.Type = ParameterTypeHelper.Normalize(parameter.Type);
             parameter.CreatedAt = DateTime.UtcNow;
             parameter.UpdatedAt = DateTime.UtcNow;
             parameter.IsDeleted = false;
@@ -152,12 +154,13 @@ namespace env_analysis_project.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(string id, [Bind("ParameterCode,ParameterName,Unit,StandardValue,Description,CreatedAt,UpdatedAt")] Parameter parameter)
+        public async Task<IActionResult> Edit(string id, [Bind("ParameterCode,ParameterName,Type,Unit,StandardValue,Description,CreatedAt,UpdatedAt")] Parameter parameter)
         {
             if (id != parameter.ParameterCode)
             {
                 return NotFound();
             }
+            parameter.Type = ParameterTypeHelper.Normalize(parameter.Type);
 
             var validationErrors = ParameterValidator.Validate(parameter).ToList();
             if (!ModelState.IsValid)
@@ -179,6 +182,7 @@ namespace env_analysis_project.Controllers
                 parameter.ParameterName = parameter.ParameterName.Trim();
                 parameter.Unit = string.IsNullOrWhiteSpace(parameter.Unit) ? null : parameter.Unit.Trim();
                 parameter.Description = string.IsNullOrWhiteSpace(parameter.Description) ? null : parameter.Description.Trim();
+                parameter.Type = ParameterTypeHelper.Normalize(parameter.Type);
                 parameter.UpdatedAt = DateTime.UtcNow;
 
                 _context.Update(parameter);
@@ -284,6 +288,7 @@ namespace env_analysis_project.Controllers
             {
                 ParameterCode = code,
                 ParameterName = dto.ParameterName.Trim(),
+                Type = ParameterTypeHelper.Normalize(dto.Type),
                 Unit = string.IsNullOrWhiteSpace(dto.Unit) ? null : dto.Unit.Trim(),
                 StandardValue = dto.StandardValue,
                 Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
@@ -320,6 +325,7 @@ namespace env_analysis_project.Controllers
             }
 
             parameter.ParameterName = dto!.ParameterName.Trim();
+            parameter.Type = ParameterTypeHelper.Normalize(dto.Type);
             parameter.Unit = string.IsNullOrWhiteSpace(dto.Unit) ? null : dto.Unit.Trim();
             parameter.StandardValue = dto.StandardValue;
             parameter.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
@@ -406,6 +412,7 @@ namespace env_analysis_project.Controllers
             {
                 ParameterCode = parameter.ParameterCode,
                 ParameterName = parameter.ParameterName,
+                Type = parameter.Type,
                 Unit = parameter.Unit,
                 StandardValue = parameter.StandardValue,
                 Description = parameter.Description,
@@ -419,6 +426,7 @@ namespace env_analysis_project.Controllers
         {
             public string ParameterCode { get; set; } = string.Empty;
             public string ParameterName { get; set; } = string.Empty;
+            public string Type { get; set; } = "water";
             public string? Unit { get; set; }
             public double? StandardValue { get; set; }
             public string? Description { get; set; }

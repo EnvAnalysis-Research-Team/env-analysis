@@ -43,7 +43,8 @@ namespace env_analysis_project.Controllers
                 {
                     Code = p.ParameterCode,
                     Label = p.ParameterName,
-                    Unit = p.Unit
+                    Unit = p.Unit,
+                    Type = ParameterTypeHelper.Normalize(p.Type)
                 })
                 .ToListAsync();
 
@@ -541,8 +542,7 @@ namespace env_analysis_project.Controllers
                 EntryDate = DateTime.UtcNow,
                 Remark = string.IsNullOrWhiteSpace(request.Remark) ? null : request.Remark.Trim(),
                 IsApproved = request.IsApproved,
-                ApprovedAt = request.IsApproved ? request.ApprovedAt : null,
-                type = NormalizeType(request.Type)
+                ApprovedAt = request.IsApproved ? request.ApprovedAt : null
             };
 
             _context.MeasurementResult.Add(entity);
@@ -615,7 +615,6 @@ namespace env_analysis_project.Controllers
             entity.Remark = string.IsNullOrWhiteSpace(request.Remark) ? null : request.Remark.Trim();
             entity.IsApproved = request.IsApproved;
             entity.ApprovedAt = computedApprovedAt;
-            entity.type = NormalizeType(request.Type ?? entity.type);
 
             await _context.SaveChangesAsync();
             await LogAsync("MeasurementResult.Update", entity.ResultID.ToString(), $"Updated measurement result for parameter {entity.ParameterCode}", new { entity.EmissionSourceID, entity.Value });
@@ -665,19 +664,14 @@ namespace env_analysis_project.Controllers
                 return null;
             }
 
-            return trimmed.Equals("water", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.Equals("air", StringComparison.OrdinalIgnoreCase)
-                ? NormalizeType(trimmed)
+            return ParameterTypeHelper.IsValid(trimmed)
+                ? ParameterTypeHelper.Normalize(trimmed)
                 : null;
         }
 
         private static string NormalizeType(string? input)
         {
-            if (string.IsNullOrWhiteSpace(input))
-                return "water";
-
-            var normalized = input.Trim().ToLowerInvariant();
-            return normalized is "water" or "air" ? normalized : "water";
+            return ParameterTypeHelper.Normalize(input);
         }
 
         private static string? NormalizeStatusFilter(string? status)
@@ -708,7 +702,7 @@ namespace env_analysis_project.Controllers
 
             if (!string.IsNullOrEmpty(normalizedType))
             {
-                query = query.Where(m => m.type == normalizedType);
+                query = query.Where(m => m.Parameter != null && m.Parameter.Type == normalizedType);
             }
 
             if (sourceId.HasValue)
@@ -768,7 +762,7 @@ namespace env_analysis_project.Controllers
             return new MeasurementResultDto
             {
                 ResultID = measurement.ResultID,
-                Type = NormalizeType(measurement.type),
+                Type = NormalizeType(measurement.Parameter?.Type),
                 EmissionSourceID = measurement.EmissionSourceID,
                 EmissionSourceName = measurement.EmissionSource?.SourceName ?? $"Source #{measurement.EmissionSourceID}",
                 ParameterCode = measurement.ParameterCode,
@@ -835,6 +829,7 @@ namespace env_analysis_project.Controllers
             public string Code { get; set; } = string.Empty;
             public string Label { get; set; } = string.Empty;
             public string? Unit { get; set; }
+            public string Type { get; set; } = "water";
         }
 
         private IReadOnlyCollection<string> GetModelErrors()
@@ -852,7 +847,8 @@ namespace env_analysis_project.Controllers
         {
             var typeCounts = await _context.MeasurementResult
                 .AsNoTracking()
-                .GroupBy(m => m.type)
+                .Include(m => m.Parameter)
+                .GroupBy(m => m.Parameter != null ? m.Parameter.Type : null)
                 .Select(g => new { Type = g.Key, Count = g.Count() })
                 .ToListAsync();
 
@@ -892,7 +888,6 @@ namespace env_analysis_project.Controllers
 
         public sealed class MeasurementResultRequest
         {
-            public string? Type { get; set; }
             public int EmissionSourceId { get; set; }
             public string ParameterCode { get; set; } = string.Empty;
             public DateTime MeasurementDate { get; set; }

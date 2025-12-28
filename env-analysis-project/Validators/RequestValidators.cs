@@ -177,6 +177,11 @@ namespace env_analysis_project.Validators
                 errors.Add("Description cannot exceed 1000 characters.");
             }
 
+            if (!ParameterTypeHelper.IsValid(parameter.Type))
+            {
+                errors.Add("Parameter type must be either 'water' or 'air'.");
+            }
+
             return errors;
         }
 
@@ -212,6 +217,11 @@ namespace env_analysis_project.Validators
             if (!string.IsNullOrWhiteSpace(dto.Description) && dto.Description.Length > 1000)
             {
                 errors.Add("Description cannot exceed 1000 characters.");
+            }
+
+            if (!ParameterTypeHelper.IsValid(dto.Type))
+            {
+                errors.Add("Parameter type must be either 'water' or 'air'.");
             }
 
             return errors;

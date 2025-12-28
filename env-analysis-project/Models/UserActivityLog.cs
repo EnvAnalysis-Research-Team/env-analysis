@@ -1,9 +1,11 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace env_analysis_project.Models
 {
+    [Index(nameof(OccurredAt))]
     public class UserActivityLog
     {
         public int Id { get; set; }

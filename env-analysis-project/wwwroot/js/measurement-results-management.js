@@ -38,6 +38,7 @@
             air: document.getElementById('tabPanel-air')
         },
         trendSelect: document.getElementById('parameterTrendSelect'),
+        trendTabButtons: document.querySelectorAll('[data-trend-tab]'),
         trendFilterForm: document.getElementById('trendFilterForm'),
         trendFilterStart: document.getElementById('trendFilterStart'),
         trendFilterEnd: document.getElementById('trendFilterEnd'),
@@ -167,6 +168,7 @@
 
     const trend = {
         selectedCode: null,
+        activeType: 'water',
         chart: null,
         filter: {
             startMonth: null,
@@ -378,18 +380,51 @@
         loadResults(state.activeTab);
     };
 
+    const normalizeParameterType = (value) => {
+        if (typeof value !== 'string' || !value.trim()) return 'water';
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'air' ? 'air' : 'water';
+    };
+
+    const getParametersForActiveType = () => {
+        const desired = normalizeParameterType(trend.activeType);
+        return (lookups.parameters ?? []).filter(item => normalizeParameterType(item.type) === desired);
+    };
+
+    const updateTrendTabButtons = () => {
+        if (!elements.trendTabButtons) return;
+        elements.trendTabButtons.forEach(button => {
+            const target = normalizeParameterType(button?.dataset?.trendTab);
+            const isActive = target === normalizeParameterType(trend.activeType);
+            button.classList.toggle('bg-blue-600', isActive);
+            button.classList.toggle('text-white', isActive);
+            button.classList.toggle('text-gray-600', !isActive);
+            button.classList.toggle('bg-white', !isActive);
+            button.classList.toggle('hover:bg-gray-100', !isActive);
+        });
+    };
+
     const renderTrendOptions = () => {
         if (!elements.trendSelect) return;
-        const items = lookups.parameters ?? [];
+        const items = getParametersForActiveType();
         if (!items.length) {
-            elements.trendSelect.innerHTML = '';
+            elements.trendSelect.innerHTML = '<option value="">No parameters available</option>';
             elements.trendSelect.disabled = true;
+            trend.selectedCode = null;
             return;
         }
+
         elements.trendSelect.disabled = false;
         elements.trendSelect.innerHTML = items
             .map(item => `<option value="${item.code}">${item.label} (${item.code})</option>`)
             .join('');
+
+        if (trend.selectedCode && items.some(item => item.code === trend.selectedCode)) {
+            elements.trendSelect.value = trend.selectedCode;
+        } else {
+            trend.selectedCode = items[0].code;
+            elements.trendSelect.value = trend.selectedCode;
+        }
     };
 
     const renderTrendSourceOptions = () => {
@@ -604,6 +639,26 @@
         }
     };
 
+    const setTrendTab = (type) => {
+        const normalized = normalizeParameterType(type);
+        if (trend.activeType === normalized) {
+            return;
+        }
+
+        trend.activeType = normalized;
+        trend.selectedCode = null;
+        trend.table.page = 1;
+        updateTrendTabButtons();
+        renderTrendOptions();
+
+        if (trend.selectedCode) {
+            loadParameterTrends(trend.selectedCode);
+        } else {
+            renderTrendTable(null);
+            clearTrendChart();
+        }
+    };
+
     const handleTrendSelectChange = () => {
         if (!elements.trendSelect) return;
         trend.selectedCode = elements.trendSelect.value || null;
@@ -621,6 +676,12 @@
             trend.selectedCode = elements.trendSelect.value || null;
         }
         renderTrendSourceOptions();
+        updateTrendTabButtons();
+        elements.trendTabButtons?.forEach(button => {
+            button.addEventListener('click', () => {
+                setTrendTab(button.dataset?.trendTab || 'water');
+            });
+        });
 
         const submitTrendFilter = (event) => {
             event.preventDefault();
@@ -1025,8 +1086,6 @@
 
     const collectPayload = (mode = 'add') => {
         const form = mode === 'add' ? addForm : editForm;
-        const typeName = mode === 'add' ? 'addResultType' : 'editResultType';
-        const checkedType = document.querySelector(`input[name="${typeName}"]:checked`)?.value || 'water';
 
         const approvedAtIso = form.approvedAt?.value
             ? new Date(form.approvedAt.value).toISOString()
@@ -1037,7 +1096,6 @@
             : (form.date?.value ? new Date(form.date.value).toISOString() : null);
 
         return {
-            type: checkedType,
             emissionSourceId: Number(form.source.value),
             parameterCode: form.parameter.value,
             value: form.value.value === '' ? null : Number(form.value.value),
@@ -1094,9 +1152,6 @@
             if (focusApproval && editForm.approvedCheckbox) {
                 editForm.approvedCheckbox.focus();
             }
-            document.querySelectorAll('input[name="editResultType"]').forEach(radio => {
-                radio.checked = radio.value === (data.type || 'water');
-            });
             toggleAppModal(elements.editModal, true);
         } catch (error) {
             console.error(error);
@@ -1163,7 +1218,6 @@
             : remarkValue;
 
         return {
-            type: typeof result.type === 'string' && result.type ? result.type : 'water',
             emissionSourceId,
             parameterCode: result.parameterCode,
             value: toNumericOrNull(result.value),
@@ -1221,7 +1275,6 @@
     };
 
     const resetAddForm = () => {
-        document.querySelector('input[name="addResultType"][value="water"]').checked = true;
         addForm.source.selectedIndex = 0;
         addForm.parameter.selectedIndex = 0;
         addForm.value.value = '';
