@@ -40,6 +40,7 @@
         trendSelect: document.getElementById('parameterTrendSelect'),
         trendTabButtons: document.querySelectorAll('[data-trend-tab]'),
         trendFilterForm: document.getElementById('trendFilterForm'),
+        trendSelectHint: document.getElementById('trendSelectHint'),
         trendFilterStart: document.getElementById('trendFilterStart'),
         trendFilterEnd: document.getElementById('trendFilterEnd'),
         trendFilterReset: document.getElementById('trendFilterReset'),
@@ -72,7 +73,25 @@
         filterStatusSelect: document.getElementById('filterStatusSelect'),
         filterStartDate: document.getElementById('filterStartDate'),
         filterEndDate: document.getElementById('filterEndDate'),
-        activeFiltersBadge: document.getElementById('activeFiltersBadge')
+        activeFiltersBadge: document.getElementById('activeFiltersBadge'),
+        importModal: document.getElementById('importResultsModal'),
+        importPanel: document.getElementById('importResultsModalPanel'),
+        openImportBtn: document.getElementById('openImportResultsBtn'),
+        closeImportBtn: document.getElementById('closeImportResultsBtn'),
+        cancelImportBtn: document.getElementById('cancelImportResultsBtn'),
+        previewImportBtn: document.getElementById('previewImportResultsBtn'),
+        confirmImportBtn: document.getElementById('confirmImportResultsBtn'),
+        backImportBtn: document.getElementById('backImportResultsBtn'),
+        importFileInput: document.getElementById('importFileInput'),
+        importFileLabel: document.getElementById('importFileLabel'),
+        importStepUpload: document.getElementById('importStepUpload'),
+        importStepPreview: document.getElementById('importStepPreview'),
+        importStepUploadLabel: document.getElementById('importStepUploadLabel'),
+        importStepPreviewLabel: document.getElementById('importStepPreviewLabel'),
+        importPreviewSummary: document.getElementById('importPreviewSummary'),
+        importPreviewHint: document.getElementById('importPreviewHint'),
+        importPreviewTableBody: document.getElementById('importPreviewTableBody'),
+        importSourceSelect: document.getElementById('importSourceSelect')
     };
 
     const addForm = {
@@ -151,6 +170,16 @@
         filters: createDefaultFilters()
     };
 
+    const importState = {
+        file: null,
+        rows: [],
+        totalRows: 0,
+        validRows: 0,
+        invalidRows: 0,
+        step: 'upload',
+        sourceId: null
+    };
+
     if (elements.pageSizeSelect) {
         elements.pageSizeSelect.value = DEFAULT_PAGE_SIZE;
     }
@@ -168,7 +197,8 @@
 
     const trend = {
         selectedCode: null,
-        activeType: 'water',
+        selectedCodes: [],
+        activeType: 'air',
         chart: null,
         filter: {
             startMonth: null,
@@ -208,6 +238,31 @@
                 closeHandler();
             }
         });
+    };
+
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) return '';
+        return value
+            .toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    };
+
+    const setButtonBusy = (button, busy, busyLabel = null) => {
+        if (!button) return;
+        const defaultLabel = button.dataset.originalLabel || button.textContent;
+        if (!button.dataset.originalLabel) {
+            button.dataset.originalLabel = defaultLabel;
+        }
+        button.disabled = busy;
+        button.classList.toggle('opacity-60', busy);
+        button.classList.toggle('pointer-events-none', busy);
+        if (busy && busyLabel) {
+            button.textContent = busyLabel;
+        } else {
+            button.textContent = button.dataset.originalLabel;
+        }
     };
 
     const formatDate = (value) => {
@@ -257,6 +312,24 @@
     const renderOptions = (select, items, valueKey, labelKey) => {
         if (!select) return;
         select.innerHTML = items.map(item => `<option value="${item[valueKey]}">${item[labelKey]}</option>`).join('');
+    };
+
+    const renderImportSourceOptions = () => {
+        if (!elements.importSourceSelect) return;
+        const items = lookups.emissionSources ?? [];
+        const options = [
+            '<option value="">Select an emission source</option>',
+            ...items.map(item => `<option value="${item.id}">${item.label}</option>`)
+        ];
+        elements.importSourceSelect.innerHTML = options.join('');
+        elements.importSourceSelect.value = '';
+        importState.sourceId = null;
+    };
+
+    const handleImportSourceChange = (event) => {
+        const value = event?.target?.value ?? '';
+        const parsed = Number(value);
+        importState.sourceId = Number.isFinite(parsed) ? parsed : null;
     };
 
     const syncApprovalCheckbox = (checkbox, approvedInput) => {
@@ -404,13 +477,30 @@
         });
     };
 
+    const configureTrendSelectDisplay = (optionCount) => {
+        if (!elements.trendSelect) return;
+        const isWater = normalizeParameterType(trend.activeType) === 'water';
+        elements.trendSelect.multiple = isWater;
+        if (isWater) {
+            elements.trendSelect.size = Math.min(Math.max(optionCount, 4), 8);
+        } else {
+            elements.trendSelect.size = 1;
+        }
+        if (elements.trendSelectHint) {
+            elements.trendSelectHint.classList.toggle('hidden', !isWater);
+        }
+    };
+
     const renderTrendOptions = () => {
         if (!elements.trendSelect) return;
         const items = getParametersForActiveType();
+        configureTrendSelectDisplay(items.length);
+
         if (!items.length) {
             elements.trendSelect.innerHTML = '<option value="">No parameters available</option>';
             elements.trendSelect.disabled = true;
             trend.selectedCode = null;
+            trend.selectedCodes = [];
             return;
         }
 
@@ -419,11 +509,25 @@
             .map(item => `<option value="${item.code}">${item.label} (${item.code})</option>`)
             .join('');
 
-        if (trend.selectedCode && items.some(item => item.code === trend.selectedCode)) {
-            elements.trendSelect.value = trend.selectedCode;
+        if (normalizeParameterType(trend.activeType) === 'water') {
+            const availableValues = new Set(items.map(item => item.code));
+            let selectedValues = trend.selectedCodes.filter(code => availableValues.has(code));
+            if (!selectedValues.length) {
+                selectedValues = [items[0].code];
+            }
+            trend.selectedCodes = selectedValues;
+            trend.selectedCode = null;
+            Array.from(elements.trendSelect.options).forEach(option => {
+                option.selected = selectedValues.includes(option.value);
+            });
         } else {
-            trend.selectedCode = items[0].code;
-            elements.trendSelect.value = trend.selectedCode;
+            trend.selectedCodes = [];
+            if (trend.selectedCode && items.some(item => item.code === trend.selectedCode)) {
+                elements.trendSelect.value = trend.selectedCode;
+            } else {
+                trend.selectedCode = items[0].code;
+                elements.trendSelect.value = trend.selectedCode;
+            }
         }
     };
 
@@ -482,9 +586,11 @@
         series.forEach((item, index) => {
             const baseColor = trendColorPalette[index % trendColorPalette.length];
             const values = item.points.map(point => point.value);
+            const datasetLabelBase = item.parameterName || item.parameterCode || `Series ${index + 1}`;
+            const datasetLabel = item.unit ? `${datasetLabelBase} (${item.unit})` : datasetLabelBase;
 
             datasets.push({
-                label: item.parameterName,
+                label: datasetLabel,
                 data: values,
                 borderColor: baseColor,
                 backgroundColor: hexToRgba(baseColor, 0.2),
@@ -570,8 +676,8 @@
         if (!elements.trendTableBody) return;
         const emptyRow = `
             <tr>
-                <td colspan="4" class="px-3 py-5 text-center text-gray-400">
-                    Select a parameter to see available measurements.
+                <td colspan="5" class="px-3 py-5 text-center text-gray-400">
+                    Select parameter(s) to see available measurements.
                 </td>
             </tr>`;
 
@@ -585,9 +691,10 @@
         const rows = tablePayload.items.map(point => `
             <tr class="hover:bg-gray-50 transition">
                 <td class="px-3 py-2 whitespace-nowrap">${point.label}</td>
+                <td class="px-3 py-2">${point.parameterName ?? '-'}</td>
                 <td class="px-3 py-2 truncate" title="${point.sourceName ?? ''}">${point.sourceName ?? '-'}</td>
                 <td class="px-3 py-2">${formatNumericValue(point.value)}</td>
-                <td class="px-3 py-2">${unit}</td>
+                <td class="px-3 py-2">${point.unit ?? unit}</td>
             </tr>
         `);
 
@@ -595,9 +702,17 @@
         updateTrendTableControls(tablePayload);
     };
 
-    const buildTrendUrl = (code) => {
+    const buildTrendUrl = () => {
+        const isWater = normalizeParameterType(trend.activeType) === 'water';
         const params = new URLSearchParams();
-        params.set('code', code);
+        if (isWater) {
+            const codes = trend.selectedCodes.filter(code => typeof code === 'string' && code.trim() !== '');
+            if (!codes.length) return null;
+            codes.forEach(code => params.append('codes', code));
+        } else {
+            if (!trend.selectedCode) return null;
+            params.set('code', trend.selectedCode);
+        }
         if (trend.filter.startMonth) params.set('startMonth', trend.filter.startMonth);
         if (trend.filter.endMonth) params.set('endMonth', trend.filter.endMonth);
         if (trend.filter.sourceId != null) params.set('sourceId', trend.filter.sourceId.toString());
@@ -606,9 +721,10 @@
         return `${routes.trend}?${params.toString()}`;
     };
 
-    const loadParameterTrends = async (code) => {
+    const loadParameterTrends = async () => {
         if (!elements.trendTableBody || !routes.trend) return;
-        if (!code) {
+        const url = buildTrendUrl();
+        if (!url) {
             renderTrendTable(null);
             clearTrendChart();
             return;
@@ -616,12 +732,12 @@
 
         elements.trendTableBody.innerHTML = `
             <tr>
-                <td colspan="3" class="px-3 py-5 text-center text-gray-400">Loading monthly data...</td>
+                <td colspan="5" class="px-3 py-5 text-center text-gray-400">Loading monthly data...</td>
             </tr>`;
         updateTrendTableControls(null, 'Loading data...');
 
         try {
-            const res = await fetch(buildTrendUrl(code), { credentials: 'same-origin' });
+            const res = await fetch(url, { credentials: 'same-origin' });
             if (!res.ok) await handleErrorResponse(res);
             const json = await res.json();
             if (json?.success === false) throw new Error(json?.message || 'Failed to load trend data.');
@@ -633,7 +749,7 @@
             clearTrendChart();
             elements.trendTableBody.innerHTML = `
                 <tr>
-                    <td colspan="3" class="px-3 py-5 text-center text-red-500">${error.message || 'Failed to load trend data.'}</td>
+                    <td colspan="5" class="px-3 py-5 text-center text-red-500">${error.message || 'Failed to load trend data.'}</td>
                 </tr>`;
             updateTrendTableControls(null, 'Error loading data');
         }
@@ -647,33 +763,34 @@
 
         trend.activeType = normalized;
         trend.selectedCode = null;
+        trend.selectedCodes = [];
         trend.table.page = 1;
         updateTrendTabButtons();
         renderTrendOptions();
-
-        if (trend.selectedCode) {
-            loadParameterTrends(trend.selectedCode);
-        } else {
-            renderTrendTable(null);
-            clearTrendChart();
-        }
+        handleTrendSelectChange();
     };
 
     const handleTrendSelectChange = () => {
         if (!elements.trendSelect) return;
-        trend.selectedCode = elements.trendSelect.value || null;
         trend.table.page = 1;
-        loadParameterTrends(trend.selectedCode);
+        if (normalizeParameterType(trend.activeType) === 'water') {
+            const selected = Array.from(elements.trendSelect.selectedOptions)
+                .map(option => option.value)
+                .filter(value => value);
+            trend.selectedCodes = selected;
+        } else {
+            trend.selectedCode = elements.trendSelect.value || null;
+        }
+        loadParameterTrends();
     };
 
     const initTrendSection = () => {
         if (elements.trendSelect) {
             renderTrendOptions();
             elements.trendSelect.addEventListener('change', () => {
-                trend.table.page = 1;
                 handleTrendSelectChange();
             });
-            trend.selectedCode = elements.trendSelect.value || null;
+            handleTrendSelectChange();
         }
         renderTrendSourceOptions();
         updateTrendTabButtons();
@@ -697,9 +814,7 @@
             trend.filter.endMonth = endValue;
             trend.filter.sourceId = Number.isFinite(parsedSource) ? parsedSource : null;
             trend.table.page = 1;
-            if (trend.selectedCode) {
-                loadParameterTrends(trend.selectedCode);
-            }
+            loadParameterTrends();
         };
 
         elements.trendFilterForm?.addEventListener('submit', submitTrendFilter);
@@ -711,21 +826,19 @@
             trend.filter.endMonth = null;
             trend.filter.sourceId = null;
             trend.table.page = 1;
-            if (trend.selectedCode) {
-                loadParameterTrends(trend.selectedCode);
-            }
+            loadParameterTrends();
         });
 
         elements.trendTablePrev?.addEventListener('click', () => {
             if (trend.table.page <= 1) return;
             trend.table.page -= 1;
-            loadParameterTrends(trend.selectedCode);
+            loadParameterTrends();
         });
 
         elements.trendTableNext?.addEventListener('click', () => {
             if (trend.table.page >= (trend.table.pagination.totalPages || 1)) return;
             trend.table.page += 1;
-            loadParameterTrends(trend.selectedCode);
+            loadParameterTrends();
         });
 
         elements.trendTablePageSize?.addEventListener('change', (event) => {
@@ -737,15 +850,10 @@
             if (selected === trend.table.pageSize) return;
             trend.table.pageSize = selected;
             trend.table.page = 1;
-            loadParameterTrends(trend.selectedCode);
+            loadParameterTrends();
         });
 
-        if (trend.selectedCode) {
-            loadParameterTrends(trend.selectedCode);
-        } else {
-            renderTrendTable(null);
-            clearTrendChart();
-        }
+        loadParameterTrends();
     };
 
     const sanitizeTab = (tab) => (TAB_KEYS.includes(tab) ? tab : 'all');
@@ -1203,6 +1311,220 @@
         }
     };
 
+    const setImportStep = (step) => {
+        importState.step = step;
+        const isUpload = step === 'upload';
+        elements.importStepUpload?.classList.toggle('hidden', !isUpload);
+        elements.importStepPreview?.classList.toggle('hidden', isUpload);
+        elements.previewImportBtn?.classList.toggle('hidden', !isUpload);
+        elements.confirmImportBtn?.classList.toggle('hidden', isUpload);
+        elements.backImportBtn?.classList.toggle('hidden', isUpload);
+        elements.importStepUploadLabel?.classList.toggle('hidden', !isUpload);
+        elements.importStepPreviewLabel?.classList.toggle('hidden', isUpload);
+        if (elements.confirmImportBtn) {
+            elements.confirmImportBtn.disabled = importState.validRows === 0;
+        }
+    };
+
+    const renderImportSummary = () => {
+        if (!elements.importPreviewSummary || !elements.importPreviewHint) return;
+        if (!importState.totalRows) {
+            elements.importPreviewSummary.textContent = 'No rows detected yet.';
+            elements.importPreviewHint.textContent = 'Upload a file and run the preview before importing.';
+            if (elements.confirmImportBtn) {
+                elements.confirmImportBtn.disabled = true;
+            }
+            return;
+        }
+
+        elements.importPreviewSummary.textContent =
+            `${importState.validRows} valid · ${importState.invalidRows} invalid · ${importState.totalRows} total`;
+        elements.importPreviewHint.textContent = importState.invalidRows > 0
+            ? 'Invalid rows will be skipped. Update the spreadsheet if you need to import them.'
+            : 'All rows look valid. Click “Import rows” to insert them.';
+        if (elements.confirmImportBtn) {
+            elements.confirmImportBtn.disabled = importState.validRows === 0;
+        }
+    };
+
+    const renderImportPreviewTable = () => {
+        if (!elements.importPreviewTableBody) return;
+        if (!importState.rows.length) {
+            elements.importPreviewTableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-3 py-6 text-center text-gray-400">
+                        Upload a file and click “Preview data” to inspect the rows before importing.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        const rowsHtml = importState.rows.map(row => {
+            const isValid = row?.isValid !== false;
+            const sourceText = row?.emissionSourceName
+                ? escapeHtml(row.emissionSourceName)
+                : (row?.emissionSourceId ? `Source #${row.emissionSourceId}` : '-');
+            const parameterCode = row?.parameterCode || '';
+            const parameterText = row?.parameterName
+                ? `${escapeHtml(row.parameterName)} (${escapeHtml(parameterCode)})`
+                : escapeHtml(parameterCode);
+            const status = !isValid && Array.isArray(row?.errors) && row.errors.length
+                ? `<ul class="list-disc ml-4 text-red-600 space-y-0.5">${row.errors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}</ul>`
+                : '<span class="text-green-600 font-semibold">Ready</span>';
+
+            return `
+                <tr class="${isValid ? '' : 'bg-red-50'}">
+                    <td class="px-3 py-2 text-gray-500 font-mono">${row?.rowNumber ?? '-'}</td>
+                    <td class="px-3 py-2">${sourceText}</td>
+                    <td class="px-3 py-2">${parameterText}</td>
+                    <td class="px-3 py-2">${formatNumericValue(row?.value)}</td>
+                    <td class="px-3 py-2">${formatDate(row?.measurementDate)}</td>
+                    <td class="px-3 py-2">${status}</td>
+                </tr>
+            `;
+        }).join('');
+
+        elements.importPreviewTableBody.innerHTML = rowsHtml;
+    };
+
+    const resetImportState = () => {
+        importState.file = null;
+        importState.rows = [];
+        importState.totalRows = 0;
+        importState.validRows = 0;
+        importState.invalidRows = 0;
+        importState.step = 'upload';
+        importState.sourceId = null;
+        if (elements.importFileInput) {
+            elements.importFileInput.value = '';
+        }
+        if (elements.importFileLabel) {
+            elements.importFileLabel.textContent = 'Choose file';
+        }
+        if (elements.importSourceSelect) {
+            elements.importSourceSelect.value = '';
+        }
+        renderImportPreviewTable();
+        renderImportSummary();
+        setImportStep('upload');
+    };
+
+    const handleImportFileChange = (event) => {
+        const file = event?.target?.files?.[0] ?? null;
+        importState.file = file;
+        if (elements.importFileLabel) {
+            elements.importFileLabel.textContent = file ? file.name : 'Choose file';
+        }
+    };
+
+    const requestImportPreview = async () => {
+        if (!routes.importPreview) {
+            alert('Import preview endpoint is not configured.');
+            return;
+        }
+        if (!importState.file) {
+            alert('Please choose an Excel file before running the preview.');
+            return;
+        }
+        if (!Number.isFinite(importState.sourceId)) {
+            alert('Select an emission source for this import.');
+            return;
+        }
+
+        try {
+            setButtonBusy(elements.previewImportBtn, true, 'Processing...');
+            const formData = new FormData();
+            formData.append('file', importState.file);
+            formData.append('emissionSourceId', importState.sourceId.toString());
+            const res = await fetch(routes.importPreview, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: withAntiForgery({ 'X-Requested-With': 'XMLHttpRequest' }),
+                body: formData
+            });
+            if (!res.ok) await handleErrorResponse(res);
+            const json = await res.json();
+            if (json?.success === false) throw new Error(json?.message || 'Failed to preview the import file.');
+            const data = unwrapApiResponse(json) || {};
+            importState.rows = Array.isArray(data.rows) ? data.rows : [];
+            importState.totalRows = Number(data.totalRows) || importState.rows.length;
+            importState.validRows = Number(data.validRows) || importState.rows.filter(row => row?.isValid !== false).length;
+            importState.invalidRows = Number(data.invalidRows);
+            if (!Number.isFinite(importState.invalidRows)) {
+                importState.invalidRows = Math.max(importState.totalRows - importState.validRows, 0);
+            }
+            renderImportPreviewTable();
+            renderImportSummary();
+            setImportStep('preview');
+        } catch (error) {
+            console.error(error);
+            alert(error.message || 'Failed to preview the import file.');
+        } finally {
+            setButtonBusy(elements.previewImportBtn, false);
+        }
+    };
+
+    const confirmImportRows = async () => {
+        if (!routes.importConfirm) {
+            alert('Import confirm endpoint is not configured.');
+            return;
+        }
+        const validRows = (importState.rows || []).filter(row => row?.isValid !== false);
+        if (validRows.length === 0) {
+            alert('No valid rows to import.');
+            return;
+        }
+
+        try {
+            setButtonBusy(elements.confirmImportBtn, true, 'Importing...');
+            const payload = {
+                rows: validRows.map(row => ({
+                    rowNumber: row.rowNumber,
+                    emissionSourceId: row.emissionSourceId,
+                    parameterCode: row.parameterCode,
+                    measurementDate: row.measurementDate,
+                    entryDate: row.entryDate,
+                    value: row.value,
+                    unit: row.unit,
+                    remark: row.remark,
+                    isApproved: row.isApproved,
+                    approvedAt: row.approvedAt
+                }))
+            };
+            const res = await fetch(routes.importConfirm, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: withAntiForgery({
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }),
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) await handleErrorResponse(res);
+            const json = await res.json();
+            if (json?.success === false) throw new Error(json?.message || 'Failed to import measurement results.');
+            alert(json?.message || 'Import completed successfully.');
+            closeImportModal();
+            await refreshActiveTab(true);
+        } catch (error) {
+            console.error(error);
+            alert(error.message || 'Failed to import measurement results.');
+        } finally {
+            setButtonBusy(elements.confirmImportBtn, false);
+        }
+    };
+
+    const openImportModal = () => {
+        resetImportState();
+        toggleAppModal(elements.importModal, true);
+    };
+
+    const closeImportModal = () => {
+        toggleAppModal(elements.importModal, false);
+        resetImportState();
+    };
+
     const buildApprovalTogglePayload = (result, targetState) => {
         if (!result) return null;
         const emissionSourceId = Number(result.emissionSourceID);
@@ -1301,6 +1623,7 @@
         renderOptions(addForm.parameter, lookups.parameters ?? [], 'code', 'label');
         renderOptions(editForm.parameter, lookups.parameters ?? [], 'code', 'label');
         renderFilterSelects();
+        renderImportSourceOptions();
     };
 
     const tableClickHandler = (event) => {
@@ -1334,6 +1657,15 @@
     elements.updateEditBtn?.addEventListener('click', updateResult);
     elements.deleteEditBtn?.addEventListener('click', () => deleteResult(editForm.id.value));
 
+    elements.openImportBtn?.addEventListener('click', openImportModal);
+    elements.closeImportBtn?.addEventListener('click', closeImportModal);
+    elements.cancelImportBtn?.addEventListener('click', closeImportModal);
+    elements.backImportBtn?.addEventListener('click', () => setImportStep('upload'));
+    elements.previewImportBtn?.addEventListener('click', requestImportPreview);
+    elements.confirmImportBtn?.addEventListener('click', confirmImportRows);
+    elements.importFileInput?.addEventListener('change', handleImportFileChange);
+    elements.importSourceSelect?.addEventListener('change', handleImportSourceChange);
+
     elements.openFilterBtn?.addEventListener('click', () => {
         setFilterFormValues();
         toggleAppModal(elements.filterModal, true);
@@ -1365,6 +1697,11 @@
     registerModalDismiss(elements.addModal, () => toggleAppModal(elements.addModal, false));
     registerModalDismiss(elements.editModal, () => toggleAppModal(elements.editModal, false));
     registerModalDismiss(elements.filterModal, () => toggleAppModal(elements.filterModal, false));
+    registerModalDismiss(elements.importModal, closeImportModal);
+
+    if (elements.importModal) {
+        resetImportState();
+    }
 
     elements.refreshBtn?.addEventListener('click', () => {
         setLoadingState(state.activeTab);

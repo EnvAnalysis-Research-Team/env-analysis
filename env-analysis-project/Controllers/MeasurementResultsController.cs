@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
@@ -18,10 +19,16 @@ namespace env_analysis_project.Controllers
     {
         private readonly env_analysis_projectContext _context;
         private readonly IUserActivityLogger _activityLogger;
-        public MeasurementResultsController(env_analysis_projectContext context, IUserActivityLogger activityLogger)
+        private readonly IMeasurementImportService _measurementImportService;
+
+        public MeasurementResultsController(
+            env_analysis_projectContext context,
+            IUserActivityLogger activityLogger,
+            IMeasurementImportService measurementImportService)
         {
             _context = context;
             _activityLogger = activityLogger;
+            _measurementImportService = measurementImportService;
         }
 
         public async Task<IActionResult> Manage()
@@ -300,22 +307,69 @@ namespace env_analysis_project.Controllers
             return File(bytes, "text/csv", fileName);
         }
 
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ImportPreview(IFormFile? file, [FromForm] int? emissionSourceId)
+        {
+            var result = await _measurementImportService.PreviewAsync(file, emissionSourceId);
+            if (!result.Success || result.Data == null)
+            {
+                return BadRequest(ApiResponse.Fail<MeasurementImportPreviewResponse>(
+                    result.Message ?? "Unable to preview the import file.",
+                    result.Errors));
+            }
+
+            return Ok(ApiResponse.Success(result.Data));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ImportConfirm([FromBody] MeasurementImportConfirmRequest request)
+        {
+            var result = await _measurementImportService.ConfirmAsync(request);
+            if (!result.Success || result.Data == null)
+            {
+                return BadRequest(ApiResponse.Fail<MeasurementImportConfirmResponse>(
+                    result.Message ?? "Unable to import measurement results.",
+                    result.Errors));
+            }
+
+            return Ok(ApiResponse.Success(result.Data, result.Message));
+        }
+
         [HttpGet]
         public async Task<IActionResult> ParameterTrends(
-            [FromQuery] string code,
+            [FromQuery] string? code,
+            [FromQuery(Name = "codes")] string[]? codes,
             [FromQuery] string? startMonth,
             [FromQuery] string? endMonth,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 12,
             [FromQuery] int? sourceId = null)
         {
-            if (string.IsNullOrWhiteSpace(code))
+            var normalizedCodes = new List<string>();
+            if (codes != null)
             {
-                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Parameter code is required."));
+                foreach (var entry in codes)
+                {
+                    if (!string.IsNullOrWhiteSpace(entry))
+                    {
+                        normalizedCodes.Add(entry.Trim().ToUpperInvariant());
+                    }
+                }
             }
 
-            var trimmedCode = code.Trim();
-            var normalizedCodeUpper = trimmedCode.ToUpperInvariant();
+            if (normalizedCodes.Count == 0)
+            {
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Parameter code is required."));
+                }
+                normalizedCodes.Add(code.Trim().ToUpperInvariant());
+            }
+
+            normalizedCodes = normalizedCodes.Distinct().ToList();
+            var isMultiParameterRequest = normalizedCodes.Count > 1;
 
             const int MaxMonths = 36;
             const int DefaultTablePageSize = 12;
@@ -369,11 +423,38 @@ namespace env_analysis_project.Controllers
             var effectiveStart = months.First();
             var effectiveEndExclusive = months.Last().AddMonths(1);
 
+            var metadataEntries = await _context.Parameter
+                .Where(p => normalizedCodes.Contains(p.ParameterCode.ToUpper()) && !p.IsDeleted)
+                .Select(p => new ParameterLookup
+                {
+                    Code = p.ParameterCode,
+                    Label = p.ParameterName,
+                    Unit = p.Unit,
+                    Type = ParameterTypeHelper.Normalize(p.Type)
+                })
+                .ToListAsync();
+
+            if (metadataEntries.Count != normalizedCodes.Count)
+            {
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("One or more parameters were not found."));
+            }
+
+            if (isMultiParameterRequest && metadataEntries.Any(entry => entry.Type != "water"))
+            {
+                return BadRequest(ApiResponse.Fail<ParameterTrendResponse>("Multi-parameter trends are only available for water parameters."));
+            }
+
+            var metadataLookup = metadataEntries
+                .ToDictionary(entry => entry.Code.ToUpperInvariant(), entry => entry);
+
+            var normalizedCodeSet = normalizedCodes.ToHashSet();
+
             var measurementQuery = _context.MeasurementResult
                 .AsNoTracking()
                 .Include(m => m.EmissionSource)
+                .Include(m => m.Parameter)
                 .Where(m => m.ParameterCode != null &&
-                            m.ParameterCode.ToUpper() == normalizedCodeUpper &&
+                            normalizedCodeSet.Contains(m.ParameterCode.ToUpper()) &&
                             m.Value.HasValue);
 
             if (sourceId.HasValue)
@@ -384,24 +465,15 @@ namespace env_analysis_project.Controllers
             var measurements = await measurementQuery
                 .Select(m => new
                 {
-                    m.ParameterCode,
+                    CodeUpper = m.ParameterCode.ToUpper(),
                     Date = m.MeasurementDate == default ? m.EntryDate : m.MeasurementDate,
                     m.Value,
-                    SourceName = m.EmissionSource != null ? m.EmissionSource.SourceName : null
+                    SourceName = m.EmissionSource != null ? m.EmissionSource.SourceName : null,
+                    ParameterName = m.Parameter != null ? m.Parameter.ParameterName : m.ParameterCode
                 })
                 .Where(x => x.Date >= effectiveStart && x.Date < effectiveEndExclusive)
                 .OrderBy(x => x.Date)
                 .ToListAsync();
-
-            var metadata = await _context.Parameter
-                .Where(p => p.ParameterCode.ToUpper() == normalizedCodeUpper && !p.IsDeleted)
-                .Select(p => new ParameterLookup
-                {
-                    Code = p.ParameterCode,
-                    Label = p.ParameterName,
-                    Unit = p.Unit
-                })
-                .FirstOrDefaultAsync();
 
             var orderedMeasurements = measurements.ToList();
             var uniqueDates = orderedMeasurements
@@ -414,40 +486,112 @@ namespace env_analysis_project.Controllers
                 .Select(date => date.ToString("dd MMM yyyy HH:mm"))
                 .ToArray();
 
-            var groupedSources = orderedMeasurements
-                .GroupBy(entry => string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName!)
-                .ToList();
+            IReadOnlyList<ParameterTrendSeries> series;
+            List<ParameterTrendPoint> tablePoints;
 
-            var series = groupedSources.Select(group =>
+            if (isMultiParameterRequest)
             {
-                var valueByDate = group
-                    .GroupBy(item => item.Date)
-                    .ToDictionary(g => g.Key, g => g.First().Value);
+                var groupedParameters = orderedMeasurements
+                    .GroupBy(entry => entry.CodeUpper)
+                    .OrderBy(group => metadataLookup[group.Key].Label, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                var seriesPoints = uniqueDates.Select(date => new ParameterTrendPoint
+                series = groupedParameters.Select(group =>
                 {
-                    Month = date.ToString("yyyy-MM-ddTHH:mm:ss"),
-                    Label = date.ToString("dd MMM yyyy HH:mm"),
-                    Value = valueByDate.TryGetValue(date, out var value) ? value : null,
-                    SourceName = group.Key
+                    var meta = metadataLookup[group.Key];
+                    var valueByDate = group
+                        .GroupBy(item => item.Date)
+                        .ToDictionary(g => g.Key, g => g.Average(x => x.Value));
+
+                    var seriesPoints = uniqueDates.Select(date => new ParameterTrendPoint
+                    {
+                        Month = date.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        Label = date.ToString("dd MMM yyyy HH:mm"),
+                        Value = valueByDate.TryGetValue(date, out var value) ? value : null,
+                        ParameterName = meta.Label,
+                        Unit = meta.Unit
+                    }).ToList();
+
+                    return new ParameterTrendSeries
+                    {
+                        ParameterCode = meta.Code,
+                        ParameterName = meta.Label,
+                        Unit = meta.Unit,
+                        Points = seriesPoints
+                    };
+                }).ToArray();
+
+                var aggregatedSourceLabel = sourceId.HasValue
+                    ? orderedMeasurements.FirstOrDefault(entry => !string.IsNullOrWhiteSpace(entry.SourceName))?.SourceName ?? $"Source #{sourceId.Value}"
+                    : "All sources";
+
+                tablePoints = groupedParameters
+                    .SelectMany(group =>
+                    {
+                        var meta = metadataLookup[group.Key];
+                        return group
+                            .GroupBy(entry => entry.Date)
+                            .Select(g => new ParameterTrendPoint
+                            {
+                                Month = g.Key.ToString("yyyy-MM-ddTHH:mm:ss"),
+                                Label = g.Key.ToString("dd MMM yyyy HH:mm"),
+                                Value = g.Average(x => x.Value),
+                                SourceName = aggregatedSourceLabel,
+                                ParameterName = meta.Label,
+                                Unit = meta.Unit
+                            });
+                    })
+                    .OrderBy(point => point.ParameterName)
+                    .ThenBy(point => point.Month)
+                    .ToList();
+            }
+            else
+            {
+                var groupedSources = orderedMeasurements
+                    .GroupBy(entry => string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName!)
+                    .ToList();
+
+                var metadata = metadataLookup[normalizedCodes[0]];
+
+                series = groupedSources.Select(group =>
+                {
+                    var valueByDate = group
+                        .GroupBy(item => item.Date)
+                        .ToDictionary(g => g.Key, g => g.First().Value);
+
+                    var seriesPoints = uniqueDates.Select(date => new ParameterTrendPoint
+                    {
+                        Month = date.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        Label = date.ToString("dd MMM yyyy HH:mm"),
+                        Value = valueByDate.TryGetValue(date, out var value) ? value : null,
+                        SourceName = group.Key,
+                        ParameterName = metadata.Label,
+                        Unit = metadata.Unit
+                    }).ToList();
+
+                    return new ParameterTrendSeries
+                    {
+                        ParameterCode = metadata.Code,
+                        ParameterName = group.Key,
+                        Unit = metadata.Unit,
+                        Points = seriesPoints
+                    };
+                }).ToArray();
+
+                tablePoints = orderedMeasurements.Select(entry => new ParameterTrendPoint
+                {
+                    Month = entry.Date.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    Label = entry.Date.ToString("dd MMM yyyy HH:mm"),
+                    Value = entry.Value,
+                    SourceName = string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName,
+                    ParameterName = metadata.Label,
+                    Unit = metadata.Unit
                 }).ToList();
+            }
 
-                return new ParameterTrendSeries
-                {
-                    ParameterCode = metadata?.Code ?? trimmedCode,
-                    ParameterName = group.Key,
-                    Unit = metadata?.Unit,
-                    Points = seriesPoints
-                };
-            }).ToArray();
-
-            var tablePoints = orderedMeasurements.Select(entry => new ParameterTrendPoint
-            {
-                Month = entry.Date.ToString("yyyy-MM-ddTHH:mm:ss"),
-                Label = entry.Date.ToString("dd MMM yyyy HH:mm"),
-                Value = entry.Value,
-                SourceName = string.IsNullOrWhiteSpace(entry.SourceName) ? "Unknown source" : entry.SourceName
-            }).ToList();
+            var defaultMetadata = metadataLookup.TryGetValue(normalizedCodes[0], out var firstMeta)
+                ? firstMeta
+                : null;
 
             var totalItems = tablePoints.Count;
             var normalizedPageSize = pageSize == AlternateTablePageSize ? AlternateTablePageSize : DefaultTablePageSize;
@@ -464,7 +608,7 @@ namespace env_analysis_project.Controllers
 
             var table = new TrendTablePage
             {
-                Unit = metadata?.Unit,
+                Unit = !isMultiParameterRequest ? defaultMetadata?.Unit : null,
                 Items = tableItems,
                 Pagination = new PaginationMetadata
                 {
@@ -941,7 +1085,10 @@ namespace env_analysis_project.Controllers
             public string Label { get; init; } = string.Empty;
             public double? Value { get; init; }
             public string? SourceName { get; init; }
+            public string? ParameterName { get; init; }
+            public string? Unit { get; init; }
         }
+
 
         private sealed class TrendTablePage
         {

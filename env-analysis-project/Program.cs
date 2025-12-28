@@ -27,6 +27,7 @@ builder.Services.AddDbContext<env_analysis_projectContext>(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUserActivityLogger, UserActivityLogger>();
+builder.Services.AddScoped<IMeasurementImportService, MeasurementImportService>();
 
 // ======================================
 // Cấu hình Identity

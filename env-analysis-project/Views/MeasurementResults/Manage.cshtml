@@ -22,13 +22,13 @@
                             <p class="text-sm font-semibold text-gray-800">Parameter trends</p>
                             <p class="text-xs text-gray-500">Select a parameter and optionally filter the month range.</p>
                         </div>
-                        <div class="inline-flex rounded-md border border-gray-200 overflow-hidden text-xs font-medium">
+                        <div class="inline-flex border border-gray-200 overflow-hidden text-xs font-medium">
                             <button type="button" data-trend-tab="water"
-                                class="trend-tab-btn px-3 py-1.5 border-r border-gray-200 bg-blue-600 text-white">
+                                class="trend-tab-btn px-3 py-1.5 border-r border-gray-200 text-gray-600 hover:bg-gray-100 w-24">
                                 Water
                             </button>
                             <button type="button" data-trend-tab="air"
-                                class="trend-tab-btn px-3 py-1.5 text-gray-600 hover:bg-gray-100">
+                                class="trend-tab-btn px-3 py-1.5 bg-blue-600 text-white w-24">
                                 Air
                             </button>
                         </div>
@@ -36,6 +36,9 @@
                 </div>
                 <select id="parameterTrendSelect"
                     class="w-full border border-gray-300 rounded-sm px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white"></select>
+                <p id="trendSelectHint" class="text-[11px] text-gray-500">
+                    Hold Ctrl (or Command on Mac) and click to select multiple water parameters.
+                </p>
                 <form id="trendFilterForm"
                     class="space-y-3 text-xs bg-gray-50 border border-dashed border-gray-200 rounded-sm p-3">
                     <div class="grid grid-cols-1 gap-2">
@@ -72,7 +75,7 @@
                     <canvas id="parameterTrendChart" class="absolute inset-0 w-full h-full invisible"></canvas>
                     <div id="trendChartPlaceholder"
                         class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm text-center px-6">
-                        Select a parameter to generate the chart.
+                        Select parameter(s) to generate the chart.
                     </div>
                 </div>
             </div>
@@ -87,6 +90,7 @@
                     <thead class="bg-gray-100 text-gray-700">
                         <tr>
                             <th class="px-3 py-2">Month</th>
+                            <th class="px-3 py-2">Parameter</th>
                             <th class="px-3 py-2">Source</th>
                             <th class="px-3 py-2">Value</th>
                             <th class="px-3 py-2">Unit</th>
@@ -94,8 +98,8 @@
                     </thead>
                     <tbody id="trendTableBody" class="divide-y divide-gray-100">
                         <tr id="trendTableEmptyRow">
-                            <td colspan="4" class="px-3 py-5 text-center text-gray-400">
-                                Select a parameter to see available measurements.
+                            <td colspan="5" class="px-3 py-5 text-center text-gray-400">
+                                Select parameter(s) to see available measurements.
                             </td>
                         </tr>
                     </tbody>
@@ -157,6 +161,11 @@
                         class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
                         <i class="bi bi-download text-[9px]"></i>
                         Export
+                    </button>
+                    <button id="openImportResultsBtn" type="button"
+                        class="flex items-center gap-1 border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 text-xs font-medium px-2.5 py-1 rounded-md transition">
+                        <i class="bi bi-upload text-[9px]"></i>
+                        Import
                     </button>
                     <button id="openAddResultBtn" type="button"
                         class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition">
@@ -456,6 +465,104 @@
     </div>
 </div>
 
+<!-- Import Results Modal -->
+<div id="importResultsModal"
+    class="app-modal fixed inset-0 bg-black bg-opacity-40 items-start justify-center z-50 p-4 pt-16 transition-all duration-200"
+    aria-hidden="true">
+    <div id="importResultsModalPanel"
+        class="app-modal__panel app-modal__panel--lg bg-white rounded-md shadow-lg w-full max-w-3xl p-5 space-y-5 h-fit">
+        <div class="flex justify-between items-start border-b border-gray-200 pb-3">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-700">Import Measurement Results</h2>
+                <p class="text-xs text-gray-500">Upload an Excel workbook, review detected rows, and confirm the import.</p>
+            </div>
+            <button type="button" id="closeImportResultsBtn" class="text-gray-500 hover:text-gray-700">
+                <i class="bi bi-x-lg text-xs"></i>
+            </button>
+        </div>
+
+        <div class="space-y-4 text-xs">
+            <div class="flex items-center justify-between text-[11px] text-gray-500">
+                <span id="importStepUploadLabel" class="font-medium text-blue-600">Step 1 · Upload file</span>
+                <span id="importStepPreviewLabel" class="hidden font-medium text-blue-600">Step 2 · Review & confirm</span>
+            </div>
+
+            <div id="importStepUpload" class="space-y-4">
+                <div class="space-y-2">
+                    <label for="importSourceSelect" class="text-xs font-semibold text-gray-700">Emission Source</label>
+                    <select id="importSourceSelect"
+                        class="w-full border border-gray-300 rounded-sm px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                        <option value="">Select an emission source</option>
+                    </select>
+                    <p class="text-[11px] text-gray-500">All rows in this Excel file will be imported into the selected emission source.</p>
+                </div>
+                <div class="border border-dashed border-gray-300 rounded-md p-4 flex flex-col gap-3 items-center text-center">
+                    <p class="text-sm font-semibold text-gray-700">Select your Excel file</p>
+                    <p class="text-xs text-gray-500">Supported columns: EmissionSourceID, ParameterCode, Value, MeasurementDate or EntryDate, Unit, Remark, IsApproved, ApprovedAt.</p>
+                    <label class="inline-flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-md transition">
+                        <i class="bi bi-upload text-[10px]"></i>
+                        <span id="importFileLabel">Choose file</span>
+                        <input type="file" id="importFileInput" class="hidden" accept=".xlsx,.xls,.csv" />
+                    </label>
+                    <p class="text-[11px] text-gray-500">Only .xlsx or .xls files are parsed. Data is staged until you confirm the import.</p>
+                </div>
+            </div>
+
+            <div id="importStepPreview" class="space-y-4 hidden">
+                <div class="rounded-md border border-blue-100 bg-blue-50 p-3 text-[11px] text-blue-700 flex flex-col gap-1">
+                    <p id="importPreviewSummary" class="font-semibold">No rows detected yet.</p>
+                    <p id="importPreviewHint">Resolve the highlighted errors before confirming to avoid skipping rows.</p>
+                </div>
+                <div class="border border-gray-200 rounded-md overflow-hidden">
+                    <div class="overflow-x-auto max-h-72">
+                        <table class="w-full text-[11px] text-left">
+                            <thead class="bg-gray-100 text-gray-600">
+                                <tr>
+                                    <th class="px-3 py-2">Row</th>
+                                    <th class="px-3 py-2">Source</th>
+                                    <th class="px-3 py-2">Parameter</th>
+                                    <th class="px-3 py-2">Value</th>
+                                    <th class="px-3 py-2">Measured</th>
+                                    <th class="px-3 py-2">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="importPreviewTableBody" class="divide-y divide-gray-100">
+                                <tr>
+                                    <td colspan="6" class="px-3 py-6 text-center text-gray-400">Upload a file and click
+                                        “Preview data” to see the detected rows.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-100 pt-3">
+            <button type="button" id="backImportResultsBtn"
+                class="hidden text-xs font-medium px-3 py-1.5 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-100 transition">
+                Back
+            </button>
+            <div class="flex items-center gap-2 sm:ml-auto">
+                <button type="button" id="cancelImportResultsBtn"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-sm transition">
+                    Cancel
+                </button>
+                <button type="button" id="previewImportResultsBtn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-sm transition inline-flex items-center gap-1">
+                    <i class="bi bi-search text-[10px]"></i>
+                    Preview data
+                </button>
+                <button type="button" id="confirmImportResultsBtn"
+                    class="hidden bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-sm transition inline-flex items-center gap-1">
+                    <i class="bi bi-check2-circle text-[10px]"></i>
+                    Import rows
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Edit Result Modal -->
 <div id="editResultModal"
     class="app-modal fixed inset-0 bg-black bg-opacity-40 items-start justify-center z-50 p-4 pt-16 transition-all duration-200"
@@ -578,7 +685,9 @@
             update: '@Url.Action("UpdateAjax", "MeasurementResults")',
             delete: '@Url.Action("DeleteAjax", "MeasurementResults")',
             trend: '@Url.Action("ParameterTrends", "MeasurementResults")',
-            export: '@Url.Action("ExportCsv", "MeasurementResults")'
+            export: '@Url.Action("ExportCsv", "MeasurementResults")',
+            importPreview: '@Url.Action("ImportPreview", "MeasurementResults")',
+            importConfirm: '@Url.Action("ImportConfirm", "MeasurementResults")'
         };
         window.measurementResultPermissions = {
             canApprove: @User.IsInRole("Admin").ToString().ToLowerInvariant()
