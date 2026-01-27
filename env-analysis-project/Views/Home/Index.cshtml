@@ -1,143 +1,157 @@
-﻿@{
+﻿@using System.Collections.Generic
+@using System.Text.Json
+@{
     ViewData["Title"] = "Dashboard";
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var emissionSourcesJson = JsonSerializer.Serialize(ViewBag.EmissionSources ?? new List<object>(), jsonOptions);
+    var parametersJson = JsonSerializer.Serialize(ViewBag.Parameters ?? new List<object>(), jsonOptions);
 }
 
-<div class="w-full container mx-auto p-4 text-xs">
-    <!-- 🔹 Giảm toàn bộ font xuống text-xs -->
-    <!-- ========== Water Quality Section ========== -->
-    <div class="mb-8">
-        <div class="flex items-center mb-2">
-            <p class="font-semibold mr-10 text-gray-600">Water Quality Parameters:</p>
-            <select class="w-64 mr-8 pr-4 bg-white py-2 font-semibold text-gray-600 border border-gray-300 rounded-lg shadow-sm pl-2 text-xs">
-                <option value="temperature">Temperature Chart</option>
-                <option value="ph">pH Chart</option>
-                <option value="color">Color Chart</option>
-                <option value="bod5">BOD5 (20°C) Chart</option>
-                <option value="cod">COD Chart</option>
-                <option value="tss">Total Suspended Solids (TSS) Chart</option>
-                <option value="arsenic">Arsenic (As) Chart</option>
-                <option value="mercury">Mercury (Hg) Chart</option>
-                <option value="lead">Lead (Pb) Chart</option>
-                <option value="cadmium">Cadmium (Cd) Chart</option>
-                <option value="chromium6">Chromium (VI) Chart</option>
-                <option value="chromium3">Chromium (III) Chart</option>
-                <option value="copper">Copper (Cu) Chart</option>
-                <option value="zinc">Zinc (Zn) Chart</option>
-                <option value="nickel">Nickel (Ni) Chart</option>
-                <option value="manganese">Manganese (Mn) Chart</option>
-                <option value="iron">Iron (Fe) Chart</option>
-                <option value="oilgrease">Mineral Oil and Grease Chart</option>
-                <option value="fluoride">Fluoride (F⁻) Chart</option>
-                <option value="chloride">Chloride (Cl⁻) Chart</option>
-                <option value="residualchlorine">Residual Chlorine Chart</option>
-                <option value="sulfide">Sulfide (S²⁻) Chart</option>
-                <option value="ammonium">Ammonium (NH₄⁺) Chart</option>
-                <option value="totalnitrogen">Total Nitrogen Chart</option>
-                <option value="totalphosphorus">Total Phosphorus Chart</option>
-                <option value="coliforms">Coliforms Chart</option>
-            </select>
-        </div>
+<form id="measurementResultsAntiForgery" method="post" class="hidden">
+    @Html.AntiForgeryToken()
+</form>
 
-        <!-- Chart -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-            <div class="h-[250px] md:h-[300px]">
-                <canvas id="chartTemp"></canvas>
+<div class="w-full mx-auto p-4">
+
+
+    <section class="mb-8">
+        <div class="w-full h-full bg-white border border-gray-200 rounded p-4 space-y-4">
+            <div class="flex flex-col lg:flex-row gap-4 w-full h-full">
+                <div class="w-full lg:w-1/4 space-y-3">
+                    <div class="flex flex-col gap-1">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800">Parameter trends</p>
+                                <p class="text-xs text-gray-500">Select a parameter.</p>
+                            </div>
+                            <div class="inline-flex border border-gray-200 overflow-hidden text-xs font-medium">
+                                <button type="button" data-trend-tab="water"
+                                    class="trend-tab-btn px-3 py-1.5 border-r border-gray-200 text-gray-600 hover:bg-gray-100 w-24">
+                                    Water
+                                </button>
+                                <button type="button" data-trend-tab="air"
+                                    class="trend-tab-btn px-3 py-1.5 bg-blue-600 text-white w-24">
+                                    Air
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <select id="parameterTrendSelect"
+                        class="w-full border border-gray-300 rounded-sm px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white"></select>
+                    <p id="trendSelectHint" class="text-[11px] text-gray-500">
+                        Hold Ctrl (or Command on Mac) and click to select multiple water parameters.
+                    </p>
+                    <form id="trendFilterForm"
+                        class="space-y-3 text-xs bg-gray-50 border border-dashed border-gray-200 rounded-sm p-3">
+                        <div class="grid grid-cols-1 gap-2">
+                            <label class="font-medium text-gray-700" for="trendFilterSource">Source</label>
+                            <select id="trendFilterSource"
+                                class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white">
+                                <option value="">All sources</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-1 gap-2">
+                            <label class="font-medium text-gray-700" for="trendFilterStart">From month</label>
+                            <input id="trendFilterStart" type="month"
+                                class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white" />
+                        </div>
+                        <div class="grid grid-cols-1 gap-2">
+                            <label class="font-medium text-gray-700" for="trendFilterEnd">To month</label>
+                            <input id="trendFilterEnd" type="month"
+                                class="border border-gray-300 rounded-sm px-3 py-1.5 focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white" />
+                        </div>
+                        <div class="flex items-center gap-2 pt-1">
+                            <button type="submit"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-sm font-semibold transition">
+                                Apply filter
+                            </button>
+                            <button type="button" id="trendFilterReset"
+                                class="px-3 py-1.5 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-100 transition">
+                                Reset
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="lg:w-3/4 w-full">
+                    <div class="relative h-72">
+                        <canvas id="parameterTrendChart" class="absolute inset-0 w-full h-full invisible"></canvas>
+                        <div id="trendChartPlaceholder"
+                            class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm text-center px-6">
+                            Select parameter(s) to generate the chart.
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-
-    <!-- ========== Air Emission Section ========== -->
-    <div>
-        <div class="flex items-center mb-2">
-            <p class="font-semibold mr-10 text-gray-600">Air Emission Parameters:</p>
-            <select class="w-64 mr-8 pr-4 bg-white py-2 font-semibold text-gray-600 border border-gray-300 rounded-lg shadow-sm pl-2 text-xs">
-                <option value="flowrate">Flow Rate Chart</option>
-                <option value="pressure">Pressure Chart</option>
-                <option value="temperature">Temperature Chart</option>
-                <option value="oxygen">Excess O₂ Chart</option>
-                <option value="dust">Total Dust Chart</option>
-                <option value="co">Carbon Monoxide (CO) Chart</option>
-                <option value="nox">Nitrogen Oxides (NOx) Chart</option>
-                <option value="so2">Sulfur Dioxide (SO₂) Chart</option>
-            </select>
-        </div>
-
-        <!-- Chart -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-            <div class="h-[250px] md:h-[300px]">
-                <canvas id="chartFlow"></canvas>
+            <div class="border-t border-gray-100 pt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-xs font-semibold text-gray-700">Measurement values</p>
+                    <span class="text-[11px] text-gray-500">Filtered history</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left table-auto">
+                        <thead class="bg-gray-100 text-gray-700">
+                            <tr>
+                                <th class="px-3 py-2">Month</th>
+                                <th class="px-3 py-2">Parameter</th>
+                                <th class="px-3 py-2">Source</th>
+                                <th class="px-3 py-2">Value</th>
+                                <th class="px-3 py-2">Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trendTableBody" class="divide-y divide-gray-100">
+                            <tr id="trendTableEmptyRow">
+                                <td colspan="5" class="px-3 py-5 text-center text-gray-400">
+                                    Select parameter(s) to see available measurements.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div
+                        class="pt-3 border-t border-gray-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-[11px] text-gray-600">
+                        <div id="trendTableSummary">No data</div>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <label class="flex items-center gap-2">
+                                <span class="text-gray-500">Rows per page</span>
+                                <select id="trendTablePageSize"
+                                    class="border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                                    <option value="6">6</option>
+                                    <option value="12" selected>12</option>
+                                </select>
+                            </label>
+                            <div class="flex items-center gap-3">
+                                <span id="trendTablePageLabel">Page 1 of 1</span>
+                                <div class="inline-flex border border-gray-300 rounded-md overflow-hidden">
+                                    <button type="button" id="trendTablePrev"
+                                        class="px-3 py-1.5 text-xs text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                        Prev
+                                    </button>
+                                    <button type="button" id="trendTableNext"
+                                        class="px-3 py-1.5 text-xs text-gray-600 border-l border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
         </div>
-    </div>
+    </section>
 </div>
-<script>
-    const months = [
-        '2025-01-01','2025-02-01','2025-03-01','2025-04-01','2025-05-01','2025-06-01',
-        '2025-07-01','2025-08-01','2025-09-01','2025-10-01','2025-11-01','2025-12-01'
-    ];
 
-    // ===== Temperature data =====
-    const datasetTemp = {
-        label: "Temperature",
-        unit: "°C",
-        values: [21.5, 23.1, 26.8, 30.2, 32.1, 34.5, 35.0, 34.2, 31.7, 28.4, 25.0, 22.2],
-        qc: 40
-    };
-
-    // ===== Flow Rate data =====
-    const datasetFlow = {
-        label: "Flow Rate",
-        unit: "m³/h",
-        values: [120, 135, 150, 160, 180, 175, 190, 185, 170, 165, 150, 130],
-        qc: 200
-    };
-
-    function seriesFrom(arr) {
-        return months.map((d, i) => ({ x: d, y: arr[i] }));
-    }
-
-    function createChart(ctxId, dataset) {
-        new Chart(document.getElementById(ctxId).getContext('2d'), {
-            type: 'line',
-            data: {
-                datasets: [{
-                    label: dataset.label,
-                    data: seriesFrom(dataset.values),
-                    borderColor: "#1f77b4",
-                    backgroundColor: "#1f77b4",
-                    tension: 0.25,
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let value = context.formattedValue;
-                                return `Indicator: ${dataset.label}\nValue: ${value} ${dataset.unit}\nDate: ${context.label}\nStandard Limit: ${dataset.qc}`;
-                            }
-                        }
-                    },
-                    legend: { labels: { font: { size: 13 } } }
-                },
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { parser: 'yyyy-MM-dd', unit: 'month', displayFormats: { month: 'MMM' } },
-                        title: { display: true, text: 'Month' }
-                    },
-                    y: {
-                        title: { display: true, text: `${dataset.label} (${dataset.unit})` }
-                    }
-                }
-            }
-        });
-    }
-
-    createChart("chartTemp", datasetTemp);
-    createChart("chartFlow", datasetFlow);
-</script>
+@section Scripts {
+    <script>
+        window.measurementResultLookups = {
+            emissionSources: @Html.Raw(emissionSourcesJson),
+            parameters: @Html.Raw(parametersJson)
+        };
+        window.measurementResultRoutes = {
+            trend: '@Url.Action("ParameterTrends", "MeasurementResults")'
+        };
+        window.measurementResultPermissions = {
+            canApprove: @User.IsInRole("Admin").ToString().ToLowerInvariant()
+        };
+    </script>
+    <script src="~/js/measurement-results-management.js" asp-append-version="true"></script>
+}

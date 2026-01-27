@@ -81,7 +81,7 @@
 <body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
 
     <header class="bg-white shadow-sm">
-        <nav class="max-w-8xl mx-auto flex items-center p-4">
+        <nav class="max-w-full mx-auto flex items-center p-4 ">
 
             <!-- Logo / Title -->
             <a class="text-md font-bold text-blue-800" asp-area="" asp-controller="Home" asp-action="Index">
@@ -100,7 +100,7 @@
                             @@click.away="open = false"
                             class="hover:text-black transition flex items-center space-x-1">
                         <span>Data Center</span>
-                        <i class="bi bi-caret-down-fill text-[10px] mt-[2px]"></i>
+                        <i class="bi bi-caret-down-fill text-[10px]"></i>
                     </button>
 
                     <!-- Dropdown menu -->
@@ -179,7 +179,7 @@
 
     @if (showAccessDeniedBanner)
     {
-        <div class="max-w-8xl mx-auto mt-4 px-4">
+        <div class="max-w-full mx-auto mt-4 px-4">
             <div role="alert"
                  class="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">
                 <div>
@@ -189,12 +189,12 @@
         </div>
     }
 
-    <main role="main" class="flex-grow container mx-auto max-w-8xl">
+    <main role="main" class="flex-grow container mx-auto max-w-full">
         @RenderBody()
     </main>
 
     <footer class="bg-white border-t border-gray-200 text-gray-700 py-6 mt-24">
-        <div class="container max-w-8xl mx-auto flex flex-col md:flex-row items-center justify-between px-4 space-y-3 md:space-y-0">
+        <div class="container max-w-full mx-auto flex flex-col md:flex-row items-center justify-between px-4 space-y-3 md:space-y-0">
 
             <!-- Bản quyền -->
             <div class="text-sm text-center md:text-left">

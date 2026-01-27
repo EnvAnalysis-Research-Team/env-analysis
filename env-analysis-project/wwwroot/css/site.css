@@ -21,10 +21,6 @@ body {
   margin-bottom: 60px;
 }
 
-/* Custom container width to match design requirement */
-.max-w-8xl {
-  max-width: 96rem;
-}
 
 /* Ensure Leaflet controls (zoom, attribution logo) do not overlap modals */
 #sourceMap .leaflet-control-container .leaflet-control {
