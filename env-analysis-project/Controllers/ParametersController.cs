@@ -295,7 +295,7 @@ WHERE rn = 1
 ORDER BY ParameterName;
 """;
 
-            var records = await _context.LatestParameterMeasurementRecords
+            var records = await _context.Set<LatestParameterMeasurementRecord>()
                 .FromSqlRaw(sql)
                 .AsNoTracking()
                 .ToListAsync();

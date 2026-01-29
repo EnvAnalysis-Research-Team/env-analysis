@@ -53,9 +53,13 @@
         trendTablePageSize: document.getElementById('trendTablePageSize'),
         trendChartContainer: document.getElementById('parameterTrendChart'),
         trendChartPlaceholder: document.getElementById('trendChartPlaceholder'),
+        trendGroupedSection: document.getElementById('airGroupedBarSection'),
+        trendGroupedChartContainer: document.getElementById('airGroupedBarChart'),
+        trendGroupedPlaceholder: document.getElementById('airGroupedBarPlaceholder'),
         latestMeasurementsBody: document.getElementById('latestMeasurementsBody'),
         latestMeasurementsCount: document.getElementById('latestMeasurementsCount'),
         latestMeasurementsUpdated: document.getElementById('latestMeasurementsUpdated'),
+        latestMeasurementsSearch: document.getElementById('latestMeasurementsSearch'),
         paginationBar: document.getElementById('resultsPaginationBar'),
         paginationSummary: document.getElementById('resultsPaginationSummary'),
         paginationPageLabel: document.getElementById('resultsPaginationPageLabel'),
@@ -203,6 +207,7 @@
         selectedCodes: [],
         activeType: 'air',
         chart: null,
+        groupedChart: null,
         filter: {
             startMonth: null,
             endMonth: null,
@@ -356,6 +361,22 @@
     const findParameterMeta = (code) => {
         if (!code) return null;
         return (lookups.parameters || []).find(item => item.code === code) || null;
+    };
+
+    const getTrendLabelText = () => {
+        const isWater = normalizeParameterType(trend.activeType) === 'water';
+        if (isWater) {
+            const codes = trend.selectedCodes.filter(code => code);
+            if (!codes.length) return '--';
+            const names = codes.map(code => {
+                const meta = findParameterMeta(code);
+                return meta?.label ? meta.label : code;
+            });
+            return names.join(', ');
+        }
+        if (!trend.selectedCode) return '--';
+        const meta = findParameterMeta(trend.selectedCode);
+        return meta?.label ? meta.label : trend.selectedCode;
     };
 
     bindApprovalCheckbox(addForm.approvedCheckbox, addForm.approvedAt);
@@ -560,12 +581,37 @@
         elements.trendChartContainer.classList.toggle('invisible', !hasData);
     };
 
+    const toggleGroupedPlaceholder = (hasData) => {
+        if (!elements.trendGroupedPlaceholder || !elements.trendGroupedChartContainer) return;
+        elements.trendGroupedPlaceholder.classList.toggle('hidden', hasData);
+        elements.trendGroupedChartContainer.classList.toggle('invisible', !hasData);
+    };
+
+    const getGroupedMode = () => {
+        const type = normalizeParameterType(trend.activeType);
+        if (type === 'air') {
+            return trend.selectedCode ? 'source' : null;
+        }
+        if (type === 'water') {
+            return trend.selectedCodes.length >= 1 ? 'parameter' : null;
+        }
+        return null;
+    };
+
     const clearTrendChart = () => {
         if (trend.chart) {
             trend.chart.destroy();
             trend.chart = null;
         }
         toggleTrendPlaceholder(false);
+    };
+
+    const clearGroupedBarChart = () => {
+        if (trend.groupedChart) {
+            trend.groupedChart.destroy();
+            trend.groupedChart = null;
+        }
+        toggleGroupedPlaceholder(false);
     };
 
     const renderTrendChart = (payload) => {
@@ -576,7 +622,7 @@
             trend.chart = null;
         }
 
-        const labels = payload?.labels ?? [];
+        const labels = Array.isArray(payload?.labels) ? payload.labels : [];
         const series = payload?.series ?? [];
         if (!series.length) {
             toggleTrendPlaceholder(false);
@@ -588,13 +634,7 @@
             const datasetLabelBase = item.parameterName || item.parameterCode || `Series ${index + 1}`;
             const datasetLabel = item.unit ? `${datasetLabelBase} (${item.unit})` : datasetLabelBase;
             const points = Array.isArray(item.points) ? item.points : [];
-            const data = points.map(point => {
-                const xValue = point?.measurementDate ?? point?.label ?? point?.timestamp ?? null;
-                return {
-                    x: xValue,
-                    y: toNumericOrNull(point?.value)
-                };
-            });
+            const data = points.map(point => toNumericOrNull(point?.value));
             return { name: datasetLabel, data, color: baseColor };
         }).filter(seriesItem => seriesItem.data.length > 0);
 
@@ -608,9 +648,18 @@
         const options = {
             series: dataSeries,
             chart: {
-                height: 350,
+                height: 260,
                 type: 'line',
                 zoom: { enabled: false }
+            },
+            title: {
+                text: "Selected parameter: " + getTrendLabelText(),
+                align: 'left',
+                style: {
+                    fontSize: '13px',
+                    fontWeight: 550,
+                    color: '#374151'
+                }
             },
             dataLabels: { enabled: false },
             stroke: { curve: 'straight', width: 3 },
@@ -623,7 +672,8 @@
                 strokeDashArray: 4
             },
             xaxis: {
-                type: 'datetime',
+                type: 'category',
+                categories: labels.length ? labels : undefined,
                 axisBorder: { show: false },
                 axisTicks: { show: true }
             },
@@ -644,6 +694,118 @@
 
         trend.chart = new ApexCharts(chartContainer, options);
         trend.chart.render();
+    };
+
+    const renderGroupedBarChart = (payload) => {
+        const mode = getGroupedMode();
+        if (!elements.trendGroupedSection) return;
+        elements.trendGroupedSection.classList.toggle('hidden', !mode);
+        if (!mode) {
+            clearGroupedBarChart();
+            return;
+        }
+
+        const chartContainer = elements.trendGroupedChartContainer;
+        if (!chartContainer || typeof ApexCharts === 'undefined') return;
+        if (trend.groupedChart) {
+            trend.groupedChart.destroy();
+            trend.groupedChart = null;
+        }
+
+        const items = payload?.table?.items ?? [];
+        if (!Array.isArray(items) || items.length === 0) {
+            toggleGroupedPlaceholder(false);
+            return;
+        }
+
+        const labels = [];
+        const labelIndex = new Map();
+        items.forEach(item => {
+            const label = item?.label ?? null;
+            if (!label || labelIndex.has(label)) return;
+            labelIndex.set(label, labels.length);
+            labels.push(label);
+        });
+
+        if (!labels.length) {
+            toggleGroupedPlaceholder(false);
+            return;
+        }
+
+        const seriesMap = new Map();
+        const countsMap = new Map();
+        items.forEach(item => {
+            const label = item?.label ?? null;
+            if (!label || !labelIndex.has(label)) return;
+            const value = toNumericOrNull(item?.value);
+            if (value == null) return;
+            const key = mode === 'source'
+                ? (item?.sourceName ? item.sourceName : (item?.sourceId ? `Source #${item.sourceId}` : 'Unknown source'))
+                : (item?.parameterName ? item.parameterName : (item?.parameterCode || 'Unknown parameter'));
+            if (!seriesMap.has(key)) {
+                seriesMap.set(key, Array(labels.length).fill(0));
+                countsMap.set(key, Array(labels.length).fill(0));
+            }
+            const data = seriesMap.get(key);
+            const counts = countsMap.get(key);
+            const idx = labelIndex.get(label);
+            data[idx] += value;
+            counts[idx] += 1;
+        });
+
+        const series = Array.from(seriesMap.entries()).map(([name, data], index) => {
+            const counts = countsMap.get(name) || [];
+            const averaged = data.map((value, idx) => {
+                const count = counts[idx] || 0;
+                return count > 0 ? value / count : null;
+            });
+            return {
+                name,
+                data: averaged,
+                color: trendColorPalette[index % trendColorPalette.length]
+            };
+        }).filter(seriesItem => seriesItem.data.some(value => value != null));
+
+        if (!series.length) {
+            toggleGroupedPlaceholder(false);
+            return;
+        }
+
+        toggleGroupedPlaceholder(true);
+
+        const options = {
+            series,
+            chart: {
+                height: 220,
+                type: 'bar',
+                toolbar: { show: false }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '55%'
+                }
+            },
+            dataLabels: { enabled: false },
+            xaxis: {
+                categories: labels,
+                labels: { rotate: -35 }
+            },
+            yaxis: {
+                min: 0,
+                labels: {
+                    formatter: (value) => formatNumericValue(value)
+                }
+            },
+            tooltip: {
+                y: { formatter: (value) => formatNumericValue(value) }
+            },
+            colors: series.map(seriesItem => seriesItem.color),
+            legend: { position: 'top', horizontalAlign: 'center' }
+        };
+
+        trend.groupedChart = new ApexCharts(chartContainer, options);
+        trend.groupedChart.render();
     };
 
     const updateTrendTableControls = (tablePayload, statusMessage) => {
@@ -743,6 +905,7 @@
         if (!url) {
             renderTrendTable(null);
             clearTrendChart();
+            clearGroupedBarChart();
             return;
         }
 
@@ -759,10 +922,12 @@
             if (json?.success === false) throw new Error(json?.message || 'Failed to load trend data.');
             const payload = unwrapApiResponse(json);
             renderTrendChart(payload);
+            renderGroupedBarChart(payload);
             renderTrendTable(payload?.table);
         } catch (error) {
             console.error(error);
             clearTrendChart();
+            clearGroupedBarChart();
             elements.trendTableBody.innerHTML = `
                 <tr>
                     <td colspan="5" class="px-3 py-5 text-center text-red-500">${error.message || 'Failed to load trend data.'}</td>
@@ -787,7 +952,16 @@
             return;
         }
 
-        const rows = items.map(item => {
+        const query = (elements.latestMeasurementsSearch?.value || '').trim().toLowerCase();
+        const filteredItems = query
+            ? items.filter(item => {
+                const name = (item?.parameterName || '').toString().toLowerCase();
+                const code = (item?.parameterCode || '').toString().toLowerCase();
+                return name.includes(query) || code.includes(query);
+            })
+            : items;
+
+        const rows = filteredItems.map(item => {
             const name = escapeHtml(item?.parameterName || item?.parameterCode || '-');
             const unit = item?.unit ? ` ${escapeHtml(item.unit)}` : '';
             const value = formatNumericValue(item?.value);
@@ -803,9 +977,12 @@
             `;
         });
 
-        elements.latestMeasurementsBody.innerHTML = rows.join('');
+        elements.latestMeasurementsBody.innerHTML = rows.join('') || `
+            <tr>
+                <td colspan="2" class="px-3 py-5 text-center text-gray-400">No matching parameters.</td>
+            </tr>`;
         if (elements.latestMeasurementsCount) {
-            const count = items.length;
+            const count = filteredItems.length;
             elements.latestMeasurementsCount.textContent = `${count} ${count === 1 ? 'parameter' : 'parameters'}`;
         }
         if (elements.latestMeasurementsUpdated) {
@@ -826,6 +1003,9 @@
             if (json?.success === false) throw new Error(json?.message || 'Failed to load latest values.');
             const payload = unwrapApiResponse(json) || [];
             renderLatestMeasurements(payload);
+            if (elements.latestMeasurementsSearch) {
+                elements.latestMeasurementsSearch.oninput = () => renderLatestMeasurements(payload);
+            }
         } catch (error) {
             console.error(error);
             elements.latestMeasurementsBody.innerHTML = `
@@ -846,6 +1026,10 @@
         trend.selectedCodes = [];
         trend.table.page = 1;
         updateTrendTabButtons();
+        if (!getGroupedMode()) {
+            elements.trendGroupedSection?.classList.add('hidden');
+            clearGroupedBarChart();
+        }
         renderTrendOptions();
         handleTrendSelectChange();
     };
@@ -861,6 +1045,10 @@
         } else {
             trend.selectedCode = elements.trendSelect.value || null;
         }
+        if (!getGroupedMode()) {
+            elements.trendGroupedSection?.classList.add('hidden');
+            clearGroupedBarChart();
+        }
         loadParameterTrends();
     };
 
@@ -874,6 +1062,9 @@
         }
         renderTrendSourceOptions();
         updateTrendTabButtons();
+        if (!getGroupedMode()) {
+            elements.trendGroupedSection?.classList.add('hidden');
+        }
         elements.trendTabButtons?.forEach(button => {
             button.addEventListener('click', () => {
                 setTrendTab(button.dataset?.trendTab || 'water');
