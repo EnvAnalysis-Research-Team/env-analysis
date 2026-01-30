@@ -1,3 +1,8 @@
+using env_analysis_project.Data;
+using env_analysis_project.Models;
+using env_analysis_project.Options;
+using env_analysis_project.Security;
+using env_analysis_project.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -7,14 +12,17 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using env_analysis_project.Data;
-using env_analysis_project.Models;
-using env_analysis_project.Options;
-using env_analysis_project.Security;
-using env_analysis_project.Services;
 using System.Text;
 
+
 var builder = WebApplication.CreateBuilder(args);
+// ======================================
+// Build ML.net
+// ======================================
+builder.Services.Configure<ThresholdOptions>(builder.Configuration.GetSection("PollutionThresholds"));
+builder.Services.Configure<ThresholdOptions>(builder.Configuration.GetSection("ThresholdOptions"));
+builder.Services.AddScoped<IPredictionService, PredictionService>();
+builder.Services.AddSingleton<IPredictionService, PredictionService>();
 
 // ======================================
 // Đăng ký DbContext
@@ -144,7 +152,8 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
-
+// Chạy Service để Huấn luyện mô hình ngay khi ứng dụng khởi động
+app.Services.GetRequiredService<IPredictionService>();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
